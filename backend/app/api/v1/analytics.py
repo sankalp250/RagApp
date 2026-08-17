@@ -5,13 +5,15 @@ Dashboard endpoints for knowledge gap analysis, conversation insights, and
 evaluation metrics. Only accessible by authenticated organization members.
 
 Endpoints:
-  GET /analytics/knowledge-gaps           - Top knowledge gaps for the org
-  GET /analytics/agents/{id}/knowledge-gaps - Gaps for a specific agent
-  GET /analytics/agents/{id}/conversations  - Recent conversations summary
-  GET /analytics/agents/{id}/stats          - Agent usage statistics
+  GET  /analytics/knowledge-gaps              - Top knowledge gaps for the org
+  GET  /analytics/agents/{id}/conversations   - Recent conversations summary
+  GET  /analytics/agents/{id}/stats           - Agent usage statistics
+  GET  /analytics/agents/{id}/health          - Knowledge health report
+  POST /analytics/knowledge-gaps/{id}/recommend - Generate AI recommendation
+  POST /analytics/score-gaps                  - Batch re-score all gaps
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
@@ -20,7 +22,11 @@ from backend.app.db.models.user import User
 from backend.app.db.models.knowledge_gap import KnowledgeGap
 from backend.app.db.models.conversation import Conversation, Message
 from backend.app.db.models.evaluation import Feedback
-from backend.app.ai.knowledge_gap import get_knowledge_gap_stats
+from backend.app.ai.intelligence import (
+    get_knowledge_health_report,
+    enrich_gap_with_recommendation,
+    score_all_gaps
+)
 
 router = APIRouter()
 
@@ -207,3 +213,89 @@ async def list_conversations(
             for c in convs
         ]
     }
+
+
+# ─── Phase 7: Intelligence Endpoints ─────────────────────────────────────────
+
+@router.get(
+    "/agents/{agent_id}/health",
+    summary="Knowledge health report for an agent"
+)
+async def agent_health_report(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns a comprehensive knowledge health report:
+    - health_score (0-100)
+    - total / open / resolved gap counts
+    - category breakdown (NO_DOCS, LOW_CONFIDENCE, ADMITTED_IGNORANCE)
+    - top 5 most frequent unanswered questions
+    """
+    return await get_knowledge_health_report(
+        db=db,
+        organization_id=current_user.organization_id,
+        agent_id=agent_id
+    )
+
+
+@router.get(
+    "/health",
+    summary="Org-wide knowledge health report"
+)
+async def org_health_report(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns knowledge health across the entire organization."""
+    return await get_knowledge_health_report(
+        db=db,
+        organization_id=current_user.organization_id
+    )
+
+
+@router.post(
+    "/knowledge-gaps/{gap_id}/recommend",
+    summary="Generate AI recommendation for a knowledge gap"
+)
+async def recommend_for_gap(
+    gap_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Uses Gemini AI to analyse the gap and related queries, then generates
+    a concrete recommendation for what documentation to add.
+    Result is saved to the gap record for future reference.
+    """
+    recommendation = await enrich_gap_with_recommendation(
+        db=db,
+        gap_id=gap_id,
+        organization_id=current_user.organization_id
+    )
+    if recommendation is None:
+        raise HTTPException(status_code=404, detail="Knowledge gap not found.")
+
+    return {"gap_id": gap_id, "recommendation": recommendation}
+
+
+@router.post(
+    "/score-gaps",
+    summary="Batch re-score all knowledge gaps"
+)
+async def batch_score_gaps(
+    agent_id: Optional[str] = Query(None, description="Scope to a specific agent"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Recalculates gap_score for all OPEN gaps in the organization.
+    Run this periodically or after adding new documents to the knowledge base.
+    """
+    updated = await score_all_gaps(
+        db=db,
+        organization_id=current_user.organization_id
+    )
+    return {"updated_gaps": updated, "message": f"Scored {updated} open knowledge gaps."}
+

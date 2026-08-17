@@ -9,6 +9,7 @@ Orchestrates the full RAG conversation flow:
   5. Knowledge gap detection & recording
   6. Response assembly
 """
+import asyncio
 import time
 from typing import List, Optional, AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ from backend.app.ai.rag_engine import (
     retrieve_context, generate_answer, save_retrieval_evidence
 )
 from backend.app.ai.knowledge_gap import detect_knowledge_gap, record_knowledge_gap
+from backend.app.workers.evaluation_jobs import run_evaluation_job
 from backend.app.core.logging import logger
 from backend.app.core.exceptions import AgentNotFoundException, DomainException
 
@@ -117,22 +119,44 @@ class ChatService:
         db.add(user_msg)
         await db.flush()
 
-        # 5. Retrieve context via vector similarity search
-        source_chunks, raw_chunks = await retrieve_context(
-            db=db,
-            agent_id=agent_id,
-            organization_id=organization_id,
-            query_text=request.message,
-            top_k=5
-        )
+        # 5. Check semantic response cache for single-turn queries
+        from backend.app.core.cache import get_cached_chat, set_cached_chat
+        cached_resp = None
+        if len(history) <= 1:
+            cached_resp = await get_cached_chat(organization_id, agent_id, request.message)
 
-        # 6. Generate LLM answer
-        answer, in_tok, out_tok = await generate_answer(
-            agent=agent,
-            user_message=request.message,
-            context_chunks=source_chunks,
-            conversation_history=history
-        )
+        if cached_resp:
+            answer = cached_resp["answer"]
+            source_chunks = [SourceChunk(**s) for s in cached_resp.get("sources", [])]
+            raw_chunks = []
+            in_tok = 0
+            out_tok = 0
+        else:
+            # Retrieve context via vector similarity search
+            source_chunks, raw_chunks = await retrieve_context(
+                db=db,
+                agent_id=agent_id,
+                organization_id=organization_id,
+                query_text=request.message,
+                top_k=5
+            )
+
+            # Generate LLM answer
+            answer, in_tok, out_tok = await generate_answer(
+                agent=agent,
+                user_message=request.message,
+                context_chunks=source_chunks,
+                conversation_history=history
+            )
+
+            # Cache the response for future requests
+            if len(history) <= 1:
+                await set_cached_chat(
+                    organization_id=organization_id,
+                    agent_id=agent_id,
+                    query=request.message,
+                    response={"answer": answer, "sources": [s.model_dump() for s in source_chunks]}
+                )
 
         latency_ms = (time.monotonic() - start_time) * 1000
 
@@ -174,6 +198,10 @@ class ChatService:
                 logger.warning(f"Knowledge gap recording failed (non-fatal): {e}")
 
         await db.commit()
+
+        # 10. Fire async evaluation job (non-blocking — does not affect response latency)
+        msg_id_for_eval = str(assistant_msg.id)
+        asyncio.create_task(run_evaluation_job(msg_id_for_eval))
 
         return ChatResponse(
             conversation_id=str(conv.id),

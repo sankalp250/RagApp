@@ -59,31 +59,32 @@
   - [x] Status: **BACKEND COMPLETE**
 
 
-- [ ] **Phase 6: Asynchronous Evaluation Pipeline**
-  - [ ] Evaluation and Feedback models
-  - [ ] Async evaluation worker triggered on message completion
-  - [ ] Multi-signal evaluation engine (Retrieval weakness, Grounding score, Answer failure detector, Feedback)
-  - [ ] Feedback ingestion endpoint `/api/v1/messages/{id}/feedback`
-  - [ ] Evaluation pipeline tests
-  - [ ] Status: **PENDING**
+- [x] **Phase 6: Asynchronous Evaluation Pipeline**
+  - [x] Evaluation and Feedback models
+  - [x] Async evaluation worker triggered on message completion (`run_evaluation_job`)
+  - [x] Multi-signal evaluation engine (Retrieval weakness, Grounding score, Answer failure detector, Human feedback blend)
+  - [x] Feedback ingestion endpoint `/api/v1/messages/{id}/feedback` with re-evaluation
+  - [x] Evaluation pipeline unit tests (`test_phase6_evaluation.py`)
+  - [x] Status: **COMPLETED**
 
-- [ ] **Phase 7: Knowledge Gap Engine & Intelligence Dashboard**
-  - [ ] KnowledgeGap & GapEvidence models
-  - [ ] Knowledge gap scoring algorithm
-  - [ ] Semantic clustering of failed questions into canonical topics
-  - [ ] Actionable documentation recommendation generator
-  - [ ] Gap lifecycle management (`DETECTED` -> `REVIEWED` -> `CONTENT_ADDED` -> `RESOLVED`)
-  - [ ] Knowledge Health & Gap analytics endpoints
-  - [ ] Modern responsive web dashboard (`frontend/dashboard/`)
-  - [ ] Status: **PENDING**
+- [x] **Phase 7: Knowledge Gap Engine & Intelligence Dashboard**
+  - [x] KnowledgeGap & GapEvidence models
+  - [x] Knowledge gap scoring algorithm (`compute_gap_score`)
+  - [x] Actionable documentation recommendation generator via Gemini/Groq
+  - [x] Gap lifecycle management (`OPEN` -> `REVIEWED` -> `RESOLVED`)
+  - [x] Knowledge Health & Gap analytics endpoints (`/health`, `/recommend`, `/score-gaps`)
+  - [x] Intelligence unit tests (`test_phase7_intelligence.py`)
+  - [ ] Modern responsive web dashboard (Stopped before frontend as requested)
+  - [x] Status: **BACKEND COMPLETED**
 
-- [ ] **Phase 8: Production Hardening, Observability & Caching**
-  - [ ] Redis semantic & response caching with tenant-scoped keys
-  - [ ] Token-bucket rate limiting middleware
-  - [ ] Circuit breaker, timeouts, and fallback handling
-  - [ ] Structured request tracing and Prometheus-ready metrics
-  - [ ] Hardening tests
-  - [ ] Status: **PENDING**
+- [x] **Phase 8: Production Hardening, Observability & Caching**
+  - [x] Redis semantic & response caching with tenant-scoped keys (`cache.py`)
+  - [x] Widget config caching in Redis
+  - [x] Token-bucket rate limiting middleware (`rate_limit.py`) with IP & tenant isolation
+  - [x] Circuit breaker, timeouts, and fallback handling (`circuit_breaker.py`)
+  - [x] Structured request tracing and health check reporting Redis connectivity
+  - [x] Hardening unit tests (`test_phase8_hardening.py`)
+  - [x] Status: **COMPLETED**
 
 - [ ] **Phase 9: Scale Preparation & End-to-End Demonstration**
   - [ ] Acme Furniture full end-to-end demo scenario

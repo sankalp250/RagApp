@@ -127,9 +127,11 @@ async def generate_answer(
     temperature = config.get("temperature", 0.3)
     max_tokens = config.get("max_tokens", 800)
 
-    # Try primary provider (Gemini)
+    # Try primary provider (Gemini) with Circuit Breaker
     try:
-        answer, in_tok, out_tok = await _call_gemini(
+        from backend.app.core.circuit_breaker import gemini_breaker
+        answer, in_tok, out_tok = await gemini_breaker.call(
+            _call_gemini,
             system_prompt=full_system,
             history=conversation_history,
             user_message=user_message,
@@ -139,11 +141,13 @@ async def generate_answer(
         )
         return answer, in_tok, out_tok
     except Exception as e:
-        logger.warning(f"Primary LLM (Gemini) failed: {e}. Falling back to Groq.")
+        logger.warning(f"Primary LLM (Gemini) failed / circuit open: {e}. Falling back to Groq.")
 
-    # Fallback to Groq
+    # Fallback to Groq with Circuit Breaker
     try:
-        answer, in_tok, out_tok = await _call_groq(
+        from backend.app.core.circuit_breaker import groq_breaker
+        answer, in_tok, out_tok = await groq_breaker.call(
+            _call_groq,
             system_prompt=full_system,
             history=conversation_history,
             user_message=user_message,
@@ -153,7 +157,7 @@ async def generate_answer(
         )
         return answer, in_tok, out_tok
     except Exception as e:
-        logger.error(f"Fallback LLM (Groq) also failed: {e}")
+        logger.error(f"Fallback LLM (Groq) also failed / circuit open: {e}")
         return "I'm experiencing technical difficulties. Please try again later.", 0, 0
 
 

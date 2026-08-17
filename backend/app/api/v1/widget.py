@@ -51,10 +51,17 @@ async def get_widget_config(
     """
     Returns the agent's widget configuration (colors, greeting, title, etc.).
     This endpoint is public and safe to call from any website embedding the widget.
+    Cached in Redis to serve high-volume traffic with near-zero DB load.
     """
+    from backend.app.core.cache import get_cached_widget_config, set_cached_widget_config
+    
+    cached = await get_cached_widget_config(public_key)
+    if cached:
+        return cached
+
     agent = await _get_agent_by_public_key(public_key, db)
     config = agent.configuration or {}
-    return {
+    result = {
         "agent_id": str(agent.id),
         "bot_title": config.get("bot_title", "AI Assistant"),
         "greeting_message": config.get("greeting_message", "Hello! How can I help you today?"),
@@ -62,6 +69,8 @@ async def get_widget_config(
         "placeholder_text": config.get("placeholder_text", "Ask a question..."),
         "suggested_questions": config.get("suggested_questions", []),
     }
+    await set_cached_widget_config(public_key, result)
+    return result
 
 
 @router.post(

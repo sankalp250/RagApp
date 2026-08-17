@@ -7,6 +7,7 @@ Endpoints:
   POST /messages/{message_id}/feedback      - Submit thumbs-up/down feedback
 """
 import json
+import asyncio
 import time
 from typing import Optional, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -22,6 +23,7 @@ from backend.app.schemas.chat import (
     ChatRequest, ChatResponse, FeedbackCreate, ConversationHistoryResponse
 )
 from backend.app.domains.chat.service import ChatService
+from backend.app.workers.evaluation_jobs import re_evaluate_with_feedback
 from backend.app.core.exceptions import AgentNotFoundException
 from backend.app.core.logging import logger
 
@@ -185,4 +187,8 @@ async def submit_feedback(
     )
     db.add(fb)
     await db.commit()
+
+    # Re-run evaluation blending human feedback signal (non-blocking)
+    asyncio.create_task(re_evaluate_with_feedback(message_id, feedback.rating))
+
     return {"status": "ok", "message_id": message_id, "rating": feedback.rating}

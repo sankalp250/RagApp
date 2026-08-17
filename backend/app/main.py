@@ -9,6 +9,8 @@ from sqlalchemy import text
 from backend.app.core.config import settings
 from backend.app.core.logging import logger
 from backend.app.core.observability import ObservabilityMiddleware
+from backend.app.core.rate_limit import RateLimitMiddleware
+from backend.app.core.cache import ping_redis
 from backend.app.core.exceptions import DomainException
 from backend.app.db.session import init_db, engine
 from backend.app.api.router import api_router
@@ -40,6 +42,9 @@ app = FastAPI(
 
 # Observability middleware (Request-ID and latency tracking)
 app.add_middleware(ObservabilityMiddleware)
+
+# Token-bucket rate limiting middleware (Redis-backed with in-memory fallback)
+app.add_middleware(RateLimitMiddleware)
 
 # CORS middleware
 origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else ["*"]
@@ -80,7 +85,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 @app.get(f"{settings.API_V1_STR}/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """Liveness probe."""
+    """Liveness probe reporting backend, database, and Redis cache health."""
+    redis_healthy = await ping_redis()
     return HealthResponse(
         status="healthy",
         version="1.0.0",
@@ -89,6 +95,7 @@ async def health_check():
         database="connected",
         services={
             "api": "online",
+            "redis_cache": "connected" if redis_healthy else "degraded (in-memory fallback)",
             "storage": settings.STORAGE_BACKEND,
             "default_llm": settings.DEFAULT_LLM_PROVIDER,
             "default_embedding": settings.DEFAULT_EMBEDDING_PROVIDER
