@@ -1,13 +1,29 @@
 """
 Chat Domain Service
 ===================
-Orchestrates the full RAG conversation flow:
-  1. Conversation management (create / resume)
-  2. Context retrieval from vector store
-  3. LLM answer generation
-  4. Message persistence
-  5. Knowledge gap detection & recording
-  6. Response assembly
+Primary orchestrator for the RAG conversational intelligence engine.
+
+Module Connections:
+  - backend.app.ai.rag_engine        -> Vector search & LLM generation (Gemini / Groq)
+  - backend.app.ai.knowledge_gap     -> Detects unanswerable queries & saves to knowledge_gaps table
+  - backend.app.workers.evaluation_jobs -> Evaluates retrieval grounding & answer quality asynchronously
+  - backend.app.core.cache           -> Semantic response caching via Redis (Upstash)
+  - backend.app.db.models.*          -> Persistence for Agents, Conversations, Messages, Evidence
+  - backend.app.schemas.chat         -> Pydantic DTOs for request/response payloads
+
+Flow for each chat turn:
+  1. Authenticate & fetch Agent configuration
+  2. Retrieve or create Conversation record (scoped to visitor_id)
+  3. Load multi-turn history for context window
+  4. Persist User Message to DB
+  5. Check Redis Semantic Response Cache (skips LLM if cached hit)
+  6. Vector search: Cosine similarity across document chunks (agent-isolated)
+  7. Generate LLM answer with citation injection & CircuitBreaker fallback
+  8. Cache response in Redis for future requests
+  9. Persist Assistant Message & Retrieval Evidence to DB
+  10. Detect Knowledge Gaps (triggers gap record if model is ungrounded or ignorant)
+  11. Fire Async Evaluation Job (non-blocking background worker)
+  12. Return structured ChatResponse to client
 """
 import asyncio
 import time
@@ -25,6 +41,7 @@ from backend.app.ai.rag_engine import (
 )
 from backend.app.ai.knowledge_gap import detect_knowledge_gap, record_knowledge_gap
 from backend.app.workers.evaluation_jobs import run_evaluation_job
+from backend.app.core.cache import get_cached_chat, set_cached_chat
 from backend.app.core.logging import logger
 from backend.app.core.exceptions import AgentNotFoundException, DomainException
 
@@ -40,7 +57,25 @@ class ChatService:
         session_id: Optional[str],
         conversation_id: Optional[str]
     ) -> Conversation:
-        """Retrieve an existing conversation or create a new one."""
+        """
+        Retrieves an active conversation by ID or provisions a new one.
+
+        Connections:
+          - Queries `conversations` table matching (conversation_id, agent_id).
+          - Scopes conversation to visitor_id and organization_id.
+
+        Args:
+          db: Database async session
+          agent_id: UUID of the target Agent
+          organization_id: UUID of the parent Organization (tenant boundary)
+          visitor_id: Anonymous visitor cookie/token from the client widget
+          session_id: Optional browser session identifier
+          conversation_id: Optional UUID to resume an existing thread
+
+        Returns:
+          Conversation model instance
+        """
+        # If client provided an existing conversation_id, verify and reuse it
         if conversation_id:
             stmt = select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -51,7 +86,7 @@ class ChatService:
             if conv:
                 return conv
 
-        # Create new conversation
+        # Otherwise create a new Conversation record
         conv = Conversation(
             agent_id=agent_id,
             organization_id=organization_id,
@@ -67,7 +102,20 @@ class ChatService:
     async def _load_conversation_history(
         db: AsyncSession, conversation_id: str, limit: int = 10
     ) -> List[dict]:
-        """Return last N messages as simple dicts for LLM history."""
+        """
+        Loads previous messages in chronological order for LLM context window.
+
+        Connections:
+          - Queries `messages` table ordered by created_at.
+
+        Args:
+          db: Database async session
+          conversation_id: UUID of the active conversation thread
+          limit: Max number of recent turns to include (avoids context overflow)
+
+        Returns:
+          List of message dicts: [{"role": "user"|"assistant", "content": "..."}]
+        """
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation_id)
@@ -86,18 +134,36 @@ class ChatService:
         request: ChatRequest
     ) -> ChatResponse:
         """
-        Full RAG pipeline for a single chat turn.
+        Executes the complete RAG pipeline for a single chat turn.
+
+        Connections:
+          - `Agent` model (db): Reads system prompt, temperature, max_tokens.
+          - `get_cached_chat` / `set_cached_chat` (cache.py): Fast-path response caching.
+          - `retrieve_context` (rag_engine.py): Vector similarity search.
+          - `generate_answer` (rag_engine.py): Calls Gemini 2.5 Flash / Groq fallback.
+          - `save_retrieval_evidence` (rag_engine.py): Persists audit log of used chunks.
+          - `detect_knowledge_gap` (knowledge_gap.py): Determines if query was unanswerable.
+          - `run_evaluation_job` (evaluation_jobs.py): Async evaluation in background.
+
+        Args:
+          db: Database async session
+          agent_id: Target chatbot agent UUID
+          organization_id: Tenant UUID
+          request: ChatRequest DTO (message text, visitor_id, session_id, stream flag)
+
+        Returns:
+          ChatResponse DTO with answer text, source chunks, token metrics, and gap metadata
         """
         start_time = time.monotonic()
 
-        # 1. Load agent
+        # Step 1: Verify Agent existence and tenant access
         stmt = select(Agent).where(Agent.id == agent_id, Agent.organization_id == organization_id)
         result = await db.execute(stmt)
         agent = result.scalars().first()
         if not agent:
             raise AgentNotFoundException(f"Agent '{agent_id}' not found.")
 
-        # 2. Conversation management
+        # Step 2: Manage conversation lifecycle
         conv = await ChatService.get_or_create_conversation(
             db=db,
             agent_id=agent_id,
@@ -107,10 +173,10 @@ class ChatService:
             conversation_id=request.conversation_id
         )
 
-        # 3. Load conversation history for multi-turn
+        # Step 3: Fetch prior conversation turns for multi-turn coherence
         history = await ChatService._load_conversation_history(db, str(conv.id))
 
-        # 4. Save user message
+        # Step 4: Persist incoming user message to database
         user_msg = Message(
             conversation_id=str(conv.id),
             role="user",
@@ -119,20 +185,21 @@ class ChatService:
         db.add(user_msg)
         await db.flush()
 
-        # 5. Check semantic response cache for single-turn queries
-        from backend.app.core.cache import get_cached_chat, set_cached_chat
+        # Step 5: Check Redis semantic response cache for single-turn queries
         cached_resp = None
         if len(history) <= 1:
             cached_resp = await get_cached_chat(organization_id, agent_id, request.message)
 
         if cached_resp:
+            # Cache Hit: reuse answer and citations directly without LLM API cost
             answer = cached_resp["answer"]
             source_chunks = [SourceChunk(**s) for s in cached_resp.get("sources", [])]
             raw_chunks = []
             in_tok = 0
             out_tok = 0
+            logger.info(f"Served response for agent {agent_id} from Redis cache.")
         else:
-            # Retrieve context via vector similarity search
+            # Cache Miss: Execute vector search across knowledge base document chunks
             source_chunks, raw_chunks = await retrieve_context(
                 db=db,
                 agent_id=agent_id,
@@ -141,7 +208,7 @@ class ChatService:
                 top_k=5
             )
 
-            # Generate LLM answer
+            # Generate answer using LLM (Gemini with Groq circuit-breaker fallback)
             answer, in_tok, out_tok = await generate_answer(
                 agent=agent,
                 user_message=request.message,
@@ -149,7 +216,7 @@ class ChatService:
                 conversation_history=history
             )
 
-            # Cache the response for future requests
+            # Store answer in Redis cache for future identical queries
             if len(history) <= 1:
                 await set_cached_chat(
                     organization_id=organization_id,
@@ -160,7 +227,7 @@ class ChatService:
 
         latency_ms = (time.monotonic() - start_time) * 1000
 
-        # 7. Save assistant message
+        # Step 6: Persist AI response message with token metrics and latency
         assistant_msg = Message(
             conversation_id=str(conv.id),
             role="assistant",
@@ -173,11 +240,11 @@ class ChatService:
         db.add(assistant_msg)
         await db.flush()
 
-        # 8. Save retrieval evidence (audit trail)
+        # Step 7: Save retrieval evidence linking message to exact document chunks used
         if raw_chunks:
             await save_retrieval_evidence(db, str(assistant_msg.id), raw_chunks, source_chunks)
 
-        # 9. Knowledge gap detection
+        # Step 8: Knowledge Gap Detection (signals unanswerable queries for dashboard analytics)
         is_gap, gap_category = detect_knowledge_gap(
             user_query=request.message,
             answer=answer,
@@ -197,9 +264,10 @@ class ChatService:
             except Exception as e:
                 logger.warning(f"Knowledge gap recording failed (non-fatal): {e}")
 
+        # Commit conversation transaction
         await db.commit()
 
-        # 10. Fire async evaluation job (non-blocking — does not affect response latency)
+        # Step 9: Trigger asynchronous evaluation job (runs in background without blocking client)
         msg_id_for_eval = str(assistant_msg.id)
         asyncio.create_task(run_evaluation_job(msg_id_for_eval))
 
@@ -222,7 +290,22 @@ class ChatService:
         organization_id: str,
         conversation_id: str
     ) -> ConversationHistoryResponse:
-        """Fetch all messages for a conversation."""
+        """
+        Fetches full message history for a conversation thread.
+
+        Connections:
+          - Verifies conversation belongs to `agent_id`.
+          - Loads `messages` list ordered chronologically.
+
+        Args:
+          db: Database async session
+          agent_id: Agent UUID
+          organization_id: Organization UUID
+          conversation_id: Conversation UUID
+
+        Returns:
+          ConversationHistoryResponse containing all messages
+        """
         stmt = select(Conversation).where(
             Conversation.id == conversation_id,
             Conversation.agent_id == agent_id

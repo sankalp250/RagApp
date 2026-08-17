@@ -1,3 +1,19 @@
+"""
+Document Ingestion Worker
+==========================
+Asynchronous background job processor for knowledge base document parsing,
+chunking, embedding generation, and vector indexing.
+
+Module Connections:
+  - backend.app.domains.documents.storage -> Reads uploaded raw files from storage backend
+  - backend.app.ai.chunking.extractors    -> Extracts text from PDF, DOCX, TXT, CSV, MD
+  - backend.app.ai.chunking.splitter      -> Recursive character chunker with overlap
+  - backend.app.ai.embeddings.service     -> Generates dense vector embeddings (Gemini/OpenAI/Local)
+  - backend.app.db.models.document        -> Persists Document and DocumentChunk records
+
+Lifecycle:
+  UPLOADED -> PROCESSING -> READY (or FAILED with error message)
+"""
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.app.db.session import AsyncSessionLocal
@@ -12,12 +28,15 @@ from backend.app.core.logging import logger
 async def process_document_job(document_id: str) -> None:
     """
     Background worker job:
-    1. Reads document file from storage
-    2. Extracts text
-    3. Chunks text
-    4. Generates vector embeddings
-    5. Saves DocumentChunks to DB
-    6. Updates Document status to READY or FAILED
+      1. Reads document file bytes from configured storage backend
+      2. Extracts raw text based on file format (PDF, DOCX, TXT)
+      3. Splits text into semantic chunks with overlap (600 chars / 80 overlap)
+      4. Generates dense vector embeddings via EmbeddingService
+      5. Saves DocumentChunks to DB linked to agent and organization
+      6. Updates Document status to READY or FAILED with chunk count
+
+    Args:
+      document_id: UUID of the Document record to ingest
     """
     async with AsyncSessionLocal() as db:
         stmt = select(Document).where(Document.id == document_id)
@@ -29,15 +48,15 @@ async def process_document_job(document_id: str) -> None:
             return
 
         try:
-            # Update status to PROCESSING
+            # Step 1: Transition status to PROCESSING
             doc.status = "PROCESSING"
             await db.commit()
 
-            # Read file from storage
+            # Step 2: Read raw file bytes from storage
             storage = get_storage_backend()
             file_bytes = await storage.read_file(doc.storage_path)
 
-            # Extract text
+            # Step 3: Extract text and metadata
             extracted_text, metadata = TextExtractor.extract_text(
                 file_bytes=file_bytes,
                 filename=doc.filename,
@@ -47,18 +66,18 @@ async def process_document_job(document_id: str) -> None:
             if not extracted_text.strip():
                 raise ValueError("No extractable text found in document.")
 
-            # Chunk document
+            # Step 4: Chunk document with recursive splitter
             splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=80)
             chunks_text = splitter.split_text(extracted_text)
 
             if not chunks_text:
                 raise ValueError("Document yielded 0 chunks after splitting.")
 
-            # Generate embeddings
+            # Step 5: Generate dense vector embeddings for all chunks
             embedding_provider = EmbeddingService.get_provider()
             embeddings = await embedding_provider.embed_texts(chunks_text)
 
-            # Persist chunks
+            # Step 6: Persist DocumentChunk records to database
             for idx, (chunk_text, emb) in enumerate(zip(chunks_text, embeddings)):
                 chunk = DocumentChunk(
                     document_id=doc.id,
@@ -75,6 +94,7 @@ async def process_document_job(document_id: str) -> None:
                 )
                 db.add(chunk)
 
+            # Step 7: Finalize Document state as READY
             doc.chunk_count = len(chunks_text)
             doc.status = "READY"
             doc.doc_metadata = {**doc.doc_metadata, **metadata, "total_chunks": len(chunks_text)}
