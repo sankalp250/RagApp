@@ -21,13 +21,13 @@
   - [x] Implement automated Phase 1 test suite (`backend/tests/unit/test_phase1.py`)
   - [x] Status: **COMPLETED**
 
-- [ ] **Phase 2: Multi-Tenancy & Agent Management**
-  - [ ] Agent & AgentConfiguration models
-  - [ ] Auth & Tenancy resolution middleware / dependency injection
-  - [ ] Agent CRUD domain service & repository
-  - [ ] `/api/v1/organizations` and `/api/v1/agents` endpoints
-  - [ ] Multi-tenancy isolation unit tests
-  - [ ] Status: **IN PROGRESS**
+- [x] **Phase 2: Multi-Tenancy & Agent Management**
+  - [x] Agent & AgentConfiguration models
+  - [x] Auth & Tenancy resolution middleware / dependency injection
+  - [x] Agent CRUD domain service & repository
+  - [x] `/api/v1/organizations` and `/api/v1/agents` endpoints
+  - [x] Multi-tenancy isolation unit tests
+  - [x] Status: **COMPLETED**
 
 - [ ] **Phase 3: Knowledge Base & Asynchronous Ingestion**
   - [ ] Document & DocumentChunk models with pgvector column
@@ -37,7 +37,7 @@
   - [ ] Background worker queue for async ingestion pipeline
   - [ ] Document management API endpoints
   - [ ] Integration tests for document ingestion & vector indexing
-  - [ ] Status: **PENDING**
+  - [ ] Status: **IN PROGRESS**
 
 - [ ] **Phase 4: Chat Engine & Streaming RAG Pipeline**
   - [ ] Conversation, Message, and RetrievalEvidence models

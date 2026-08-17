@@ -55,11 +55,11 @@ app.add_middleware(
 @app.exception_handler(DomainException)
 async def domain_exception_handler(request: Request, exc: DomainException):
     logger.warning(
-        f"DomainException: {exc.message}",
+        f"DomainException ({exc.__class__.__name__}): {exc.message}",
         extra={"request_id": getattr(request.state, "request_id", "unknown"), "details": exc.details}
     )
     return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
+        status_code=exc.status_code,
         content={"detail": exc.message, "details": exc.details}
     )
 

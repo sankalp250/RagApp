@@ -1,9 +1,10 @@
 from typing import Any, Optional, Dict
-from fastapi import HTTPException, status
 
 
 class DomainException(Exception):
-    """Base domain exception."""
+    """Base domain exception with configurable HTTP status code."""
+    status_code: int = 400
+
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message)
         self.message = message
@@ -11,28 +12,28 @@ class DomainException(Exception):
 
 
 class TenantNotFoundException(DomainException):
-    pass
+    status_code: int = 404
 
 
 class TenantAccessDeniedException(DomainException):
-    pass
+    status_code: int = 403
 
 
 class AgentNotFoundException(DomainException):
-    pass
+    status_code: int = 404
 
 
 class DocumentNotFoundException(DomainException):
-    pass
+    status_code: int = 404
 
 
 class AuthenticationFailedException(DomainException):
-    pass
+    status_code: int = 401
 
 
 class InvalidCredentialsException(DomainException):
-    pass
+    status_code: int = 401
 
 
 class RateLimitExceededException(DomainException):
-    pass
+    status_code: int = 429
