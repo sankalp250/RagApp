@@ -21,8 +21,8 @@ class Feedback(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "feedback"
 
     message_id = Column(String(36), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True)
-    rating = Column(Integer, nullable=False)  # 1 (thumbs up) or -1 (thumbs down)
-    reason = Column(Text, nullable=True)
+    rating = Column(Integer, nullable=False)  # 1-5 star rating; 1=bad, 5=excellent
+    comment = Column(Text, nullable=True)     # Free text comment
     feedback_metadata = Column(JSON, default=dict, nullable=False)
 
     message = relationship("Message", back_populates="feedback")

@@ -7,10 +7,17 @@ import re
 from backend.app.db.session import get_db
 from backend.app.db.models.user import User
 from backend.app.db.models.organization import Organization, OrganizationMember, OrgRole
-from backend.app.schemas.auth import UserRegisterRequest, UserLoginRequest, TokenResponse, UserResponse
+from backend.app.schemas.auth import UserRegisterRequest, UserLoginRequest, GoogleAuthRequest, TokenResponse, UserResponse
 from backend.app.core.security import get_password_hash, verify_password, create_access_token
 from backend.app.core.config import settings
 from backend.app.api.deps import get_current_user
+
+try:
+    from google.oauth2 import id_token as google_id_token
+    from google.auth.transport import requests as google_requests
+except ImportError:
+    google_id_token = None
+    google_requests = None
 
 router = APIRouter()
 
@@ -116,6 +123,97 @@ async def login(
 
     org_id = org_row[0].id if org_row else None
     role = org_row[1] if org_row else "MEMBER"
+
+    token = create_access_token(
+        subject=user.id,
+        organization_id=org_id,
+        role=role
+    )
+
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user.id,
+        email=user.email,
+        organization_id=org_id
+    )
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_auth(
+    payload: GoogleAuthRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Authenticate or register user using Google OAuth ID token."""
+    if not google_id_token:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Google Auth library not available"
+        )
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            payload.id_token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID if settings.GOOGLE_CLIENT_ID else None
+        )
+        email = idinfo.get("email", "").lower()
+        full_name = idinfo.get("name", "")
+        if not email:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not provided by Google")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Google token: {str(e)}"
+        )
+
+    # Check if user exists
+    stmt = select(User).where(User.email == email)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+
+    if not user:
+        # Auto-create user via Google
+        user = User(
+            email=email,
+            hashed_password=get_password_hash(f"google-oauth-{email}"),
+            full_name=full_name,
+            is_active=True
+        )
+        db.add(user)
+        await db.flush()
+
+        org_name = payload.organization_name or f"{full_name or 'My'} Organization"
+        base_slug = slugify(org_name)
+        slug = f"{base_slug}-{user.id[:8]}"
+
+        new_org = Organization(name=org_name, slug=slug)
+        db.add(new_org)
+        await db.flush()
+
+        membership = OrganizationMember(
+            organization_id=new_org.id,
+            user_id=user.id,
+            role=OrgRole.OWNER.value
+        )
+        db.add(membership)
+        await db.commit()
+        await db.refresh(user)
+
+        org_id = new_org.id
+        role = OrgRole.OWNER.value
+    else:
+        # Find user's organization
+        stmt_org = (
+            select(Organization, OrganizationMember.role)
+            .join(OrganizationMember, Organization.id == OrganizationMember.organization_id)
+            .where(OrganizationMember.user_id == user.id)
+        )
+        res_org = await db.execute(stmt_org)
+        org_row = res_org.first()
+        org_id = org_row[0].id if org_row else None
+        role = org_row[1] if org_row else "MEMBER"
 
     token = create_access_token(
         subject=user.id,

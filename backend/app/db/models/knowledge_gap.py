@@ -9,15 +9,22 @@ class KnowledgeGap(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     agent_id = Column(String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
-    title = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
+
+    # Raw query and normalized form for deduplication
+    query = Column(Text, nullable=False)
+    normalized_query = Column(Text, nullable=False, index=True)
+
+    # Detection metadata
+    category = Column(String(100), nullable=True)   # NO_RELEVANT_DOCUMENTS, LOW_CONFIDENCE_RETRIEVAL, MODEL_ADMITTED_IGNORANCE
+    frequency = Column(Integer, default=1, nullable=False)
+    status = Column(String(50), default="OPEN", nullable=False)  # OPEN, REVIEWED, RESOLVED
+
+    # Snapshot of top chunks at time of detection (for analyst review)
+    top_chunks_context = Column(JSON, default=list, nullable=False)
+
+    # AI-generated suggestion fields (populated in Phase 7 intelligence layer)
     recommended_action = Column(Text, nullable=True)
-    suggested_questions = Column(JSON, default=list, nullable=False)
-    occurrence_count = Column(Integer, default=1, nullable=False)
-    success_rate = Column(Float, default=0.0, nullable=False)
     gap_score = Column(Float, default=0.0, nullable=False)
-    status = Column(String(50), default="DETECTED", nullable=False)  # DETECTED, REVIEWED, CONTENT_ADDED, RESOLVED
-    cluster_centroid = Column(JSON, nullable=True)
     gap_metadata = Column(JSON, default=dict, nullable=False)
 
     agent = relationship("Agent", back_populates="knowledge_gaps")
@@ -27,10 +34,9 @@ class KnowledgeGap(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 class GapEvidence(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "gap_evidence"
 
-    knowledge_gap_id = Column(String(36), ForeignKey("knowledge_gaps.id", ondelete="CASCADE"), nullable=False, index=True)
+    gap_id = Column(String(36), ForeignKey("knowledge_gaps.id", ondelete="CASCADE"), nullable=False, index=True)
     message_id = Column(String(36), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True)
-    query_text = Column(Text, nullable=False)
-    failure_reason = Column(String(255), nullable=True)
+    gap_category = Column(String(100), nullable=True)
 
     knowledge_gap = relationship("KnowledgeGap", back_populates="evidence_records")
     message = relationship("Message", back_populates="gap_evidence")

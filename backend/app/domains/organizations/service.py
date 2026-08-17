@@ -40,6 +40,14 @@ class OrganizationService:
             role=OrgRole.OWNER.value
         )
         db.add(member)
+
+        # Set primary org on user for fast lookup (only if not already set)
+        stmt_user = select(User).where(User.id == user_id)
+        res_user = await db.execute(stmt_user)
+        user = res_user.scalars().first()
+        if user and not user.primary_organization_id:
+            user.primary_organization_id = str(org.id)
+
         await db.commit()
         await db.refresh(org)
         return org

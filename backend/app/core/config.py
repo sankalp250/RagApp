@@ -21,17 +21,31 @@ class Settings(BaseSettings):
     SQLITE_DB_PATH: str = "backend/storage/local_rag.db"
     USE_SQLITE_FALLBACK: bool = True
 
-    # Cache
-    REDIS_URL: str = "redis://localhost:6379/0"
-    USE_REDIS_FALLBACK: bool = True
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
 
-    # AI
+    # Supabase
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+
+    # Cache & Message Broker (Redis / Upstash)
+    REDIS_URL: str = "redis://localhost:6379/0"
+    UPSTASH_REDIS_REST_URL: str = ""
+    UPSTASH_REDIS_REST_TOKEN: str = ""
+    USE_REDIS_FALLBACK: bool = False
+
+    # AI Providers
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     DEFAULT_LLM_PROVIDER: str = "gemini"
+    FALLBACK_LLM_PROVIDER: str = "groq"
+    GROQ_FALLBACK_MODEL: str = "qwen-qwq-32b"
     DEFAULT_EMBEDDING_PROVIDER: str = "gemini"
-    EMBEDDING_DIMENSION: int = 1536
+    EMBEDDING_DIMENSION: int = 768
 
     # Storage
     STORAGE_BACKEND: str = "local"

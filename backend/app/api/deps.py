@@ -56,6 +56,25 @@ async def get_current_user(
     return user
 
 
+async def get_optional_user(
+    auth: Optional[HTTPAuthorizationCredentials] = Security(security_bearer),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """Like get_current_user but returns None instead of raising 401 (for public endpoints)."""
+    if not auth or not auth.credentials:
+        return None
+    try:
+        payload = decode_token(auth.credentials)
+        user_id: str = payload.get("sub")
+        if not user_id:
+            return None
+        stmt = select(User).where(User.id == user_id, User.is_active.is_(True))
+        result = await db.execute(stmt)
+        return result.scalars().first()
+    except Exception:
+        return None
+
+
 async def get_current_organization(
     organization_id: Optional[str] = Header(None, alias="X-Organization-ID"),
     current_user: User = Depends(get_current_user),
