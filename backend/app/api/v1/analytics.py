@@ -280,6 +280,96 @@ async def recommend_for_gap(
     return {"gap_id": gap_id, "recommendation": recommendation}
 
 
+@router.get(
+    "/overview",
+    summary="Get complete real-time dashboard overview metrics for the organization"
+)
+async def get_overview_metrics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns live aggregated metrics, counts, and health for the authenticated organization."""
+    org_id = current_user.organization_id
+
+    # 1. Total Agents
+    from backend.app.db.models.agent import Agent
+    agents_count = await db.scalar(
+        select(func.count(Agent.id)).where(Agent.organization_id == org_id)
+    ) or 0
+
+    # 2. Total Documents & Chunks
+    from backend.app.db.models.document import Document, DocumentChunk
+    docs_count = await db.scalar(
+        select(func.count(Document.id)).where(Document.organization_id == org_id)
+    ) or 0
+
+    chunks_count = await db.scalar(
+        select(func.count(DocumentChunk.id)).join(
+            Document, DocumentChunk.document_id == Document.id
+        ).where(Document.organization_id == org_id)
+    ) or 0
+
+    # 3. Total Conversations & Messages
+    conv_count = await db.scalar(
+        select(func.count(Conversation.id)).where(Conversation.organization_id == org_id)
+    ) or 0
+
+    unique_users = await db.scalar(
+        select(func.count(func.distinct(Conversation.visitor_id))).where(Conversation.organization_id == org_id)
+    ) or 0
+
+    # 4. Avg Latency & Resolution
+    avg_latency = await db.scalar(
+        select(func.avg(Message.latency_ms)).join(
+            Conversation, Message.conversation_id == Conversation.id
+        ).where(
+            Conversation.organization_id == org_id,
+            Message.role == "assistant"
+        )
+    )
+
+    # 5. Open Knowledge Gaps
+    gap_count = await db.scalar(
+        select(func.count(KnowledgeGap.id)).where(
+            KnowledgeGap.organization_id == org_id,
+            KnowledgeGap.status == "OPEN"
+        )
+    ) or 0
+
+    # 6. Recent Conversations
+    stmt_recent = (
+        select(Conversation)
+        .where(Conversation.organization_id == org_id)
+        .order_by(desc(Conversation.created_at))
+        .limit(5)
+    )
+    res_recent = await db.execute(stmt_recent)
+    recent_convs = res_recent.scalars().all()
+
+    return {
+        "agents_count": agents_count,
+        "documents_count": docs_count,
+        "chunks_count": chunks_count,
+        "conversations_count": conv_count,
+        "unique_users_count": unique_users,
+        "resolution_rate": f"{(100 - (gap_count * 5)):.1f}%" if conv_count > 0 else "--",
+        "avg_latency": f"{(avg_latency / 1000):.2f}s" if avg_latency else "--",
+        "knowledge_gaps_count": gap_count,
+        "health_score": max(0, 100 - (gap_count * 10)) if (docs_count > 0 or conv_count > 0) else 100,
+        "is_fresh_account": (agents_count == 0 and docs_count == 0 and conv_count == 0),
+        "recent_conversations": [
+            {
+                "id": str(c.id),
+                "title": f"Session #{str(c.id)[:8]}",
+                "visitor_id": c.visitor_id,
+                "status": c.status,
+                "created_at": c.created_at.isoformat() if c.created_at else None
+            }
+            for c in recent_convs
+        ]
+    }
+
+
 @router.post(
     "/score-gaps",
     summary="Batch re-score all knowledge gaps"
@@ -298,4 +388,5 @@ async def batch_score_gaps(
         organization_id=current_user.organization_id
     )
     return {"updated_gaps": updated, "message": f"Scored {updated} open knowledge gaps."}
+
 

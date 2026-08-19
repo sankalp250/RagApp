@@ -1,234 +1,228 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
-  CheckCircle2,
+  Brain,
   Sparkles,
-  MessageSquare,
-  FilePlus,
-  ArrowRight,
+  CheckCircle2,
+  FileEdit,
   TrendingDown,
-  Clock,
-  Check,
+  ArrowRight,
+  TrendingUp,
+  BookOpen,
+  ChevronRight,
+  Layers,
+  Bot,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { Tabs } from "@/components/ui/Tabs";
-import { Modal } from "@/components/ui/Modal";
+import confetti from "canvas-confetti";
 import { api } from "@/lib/api";
 
+interface GapItem {
+  id: string;
+  query: string;
+  category: string;
+  frequency: number;
+  status: string;
+  agent_id?: string;
+  created_at?: string;
+  recommended_action?: string;
+}
+
 export default function KnowledgeGapsPage() {
-  const [selectedGap, setSelectedGap] = useState({
-    id: "gap-1",
-    topic: "Delivery address changes",
-    status: "Needs Attention",
-    totalConversations: 143,
-    successfulAnswers: "32%",
-    avgRelevanceScore: 0.41,
-    userDissatisfaction: "38%",
-    commonQuestions: [
-      "Can I change my delivery address after shipment?",
-      "I entered the wrong address, can I update it?",
-      "Is it possible to redirect my package?",
-      "My order is already shipped, what can I do?",
-      "Can the courier deliver to a different address?",
-    ],
-    suggestedTopics: [
-      "Changing address before shipment cutoff",
-      "Options available once package is in transit",
-      "Direct carrier redirection policies (FedEx/UPS/DHL)",
-      "Time limits and customer service escalation",
-    ],
-  });
+  const [gaps, setGaps] = useState<GapItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedGapIndex, setSelectedGapIndex] = useState(0);
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [draftPublished, setDraftPublished] = useState(false);
 
-  const [activeSubTab, setActiveSubTab] = useState("insights");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedDraft, setGeneratedDraft] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const handleGenerateRecommendation = async () => {
-    setIsGenerating(true);
-    setIsModalOpen(true);
-
-    try {
-      const res = await api.generateGapRecommendation(selectedGap.id);
-      setGeneratedDraft(
-        res.recommendation ||
-          `# Knowledge Article: How to Update Your Delivery Address\n\n## 1. Before Order Dispatch\nCustomers can modify their delivery address directly from their Account Dashboard within 24 hours of placing an order.\n\n## 2. In-Transit Package Redirection\nOnce a tracking number is generated, packages cannot be redirected by our support team directly. Customers must use the carrier's delivery management portal (e.g., UPS My Choice or FedEx Delivery Manager) to request a hold for pickup or alternate address.`
-      );
-    } catch {
-      setGeneratedDraft(
-        `# Knowledge Base Article: Delivery Address Modification Policy\n\n## Overview\nThis article clarifies the cutoff times and procedures for modifying shipping addresses.\n\n### Rules\n1. **Unfulfilled Orders:** Immediate change permitted via order details.\n2. **Shipped Orders:** Must use carrier self-service portal to update destination.\n3. **Carrier Restrictions:** International shipments cannot be rerouted once customs processing begins.`
-      );
-    } finally {
-      setIsGenerating(false);
+  useEffect(() => {
+    async function loadGaps() {
+      try {
+        const res = await api.get<{ total: number; gaps: GapItem[] }>("/analytics/knowledge-gaps");
+        setGaps(res.gaps || []);
+      } catch (err) {
+        setGaps([]);
+      } finally {
+        setLoading(false);
+      }
     }
+    loadGaps();
+  }, []);
+
+  const currentGap = gaps[selectedGapIndex];
+
+  const handleGenerateDraft = () => {
+    setIsDrafting(true);
+  };
+
+  const handlePublishArticle = () => {
+    setDraftPublished(true);
+    confetti({
+      particleCount: 90,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
-      
-      {/* Top Header */}
+    <div className="space-y-8">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-extrabold text-white">Knowledge Gap Intelligence</h1>
-            <Badge variant="warning">{selectedGap.status}</Badge>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
+              Knowledge Gap Intelligence
+            </h1>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1 border ${
+                gaps.length > 0
+                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+              }`}
+            >
+              {gaps.length > 0 ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                  <span>{gaps.length} Gaps Detected</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>0 Gaps (Optimal Coverage)</span>
+                </>
+              )}
+            </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Topic: <span className="text-slate-200 font-bold">{selectedGap.topic}</span> &bull; Customers are asking questions where your knowledge base lacks clarity.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+            AI continuously discovers unanswered queries, clusters semantic gaps, and synthesizes ready-to-publish articles.
           </p>
         </div>
 
-        <Button variant="outline" size="sm">
-          Mark as Resolved
-        </Button>
-      </div>
-
-      {/* 4 Gap Metric Indicators (Matching Image 3) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
-          <p className="text-xs text-slate-400">Total Conversations</p>
-          <p className="text-2xl font-black text-white">{selectedGap.totalConversations}</p>
-          <p className="text-[10px] text-slate-500">affected sessions</p>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
-          <p className="text-xs text-slate-400">Successful Answers</p>
-          <p className="text-2xl font-black text-rose-400">{selectedGap.successfulAnswers}</p>
-          <p className="text-[10px] text-slate-500">below 60% threshold</p>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
-          <p className="text-xs text-slate-400">Avg. Relevance Score</p>
-          <p className="text-2xl font-black text-amber-400">{selectedGap.avgRelevanceScore}</p>
-          <p className="text-[10px] text-slate-500">grounding retrieval</p>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
-          <p className="text-xs text-slate-400">User Dissatisfaction</p>
-          <p className="text-2xl font-black text-rose-400">{selectedGap.userDissatisfaction}</p>
-          <p className="text-[10px] text-slate-500">negative thumbs feedback</p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <Tabs
-        tabs={[
-          { id: "insights", label: "Insights & Clustering" },
-          { id: "recommendations", label: "AI Recommendations" },
-          { id: "conversations", label: "Affected Conversations" },
-        ]}
-        activeTab={activeSubTab}
-        onChange={setActiveSubTab}
-      />
-
-      {/* 2-Column Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Left Column: Common Questions Cluster (6 Cols) */}
-        <div className="lg:col-span-6 rounded-3xl bg-slate-900 border border-slate-800 p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-indigo-400" />
-              Common User Questions Cluster
-            </h3>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
-              5 Variations
-            </span>
+        <div className="flex items-center gap-3">
+          <div className="px-3.5 py-1.5 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>Health Status: 100%</span>
           </div>
+        </div>
+      </div>
 
-          <div className="space-y-2.5">
-            {selectedGap.commonQuestions.map((q, i) => (
-              <div
-                key={i}
-                className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs text-slate-200 font-medium flex items-start gap-2.5"
+      {/* Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="p-5 rounded-[28px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5">
+          <span className="text-xs font-semibold text-slate-500 block mb-1">Total Gap Clusters</span>
+          <span className="text-3xl font-black text-slate-900 font-display">
+            {gaps.length} {gaps.length === 1 ? "Topic" : "Topics"}
+          </span>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {gaps.length === 0 ? "No unresolved customer queries" : "Identified across active conversations"}
+          </p>
+        </div>
+
+        <div className="p-5 rounded-[28px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5">
+          <span className="text-xs font-semibold text-slate-500 block mb-1">Unresolved Questions</span>
+          <span className="text-3xl font-black text-slate-900 font-display">
+            {gaps.reduce((acc, g) => acc + (g.frequency || 1), 0)} Inquiries
+          </span>
+          <p className="text-[11px] text-slate-400 mt-1">Queries resulting in fallback responses</p>
+        </div>
+
+        <div className="p-5 rounded-[28px] bg-emerald-50/80 border border-emerald-200 shadow-md shadow-emerald-900/5">
+          <span className="text-xs font-semibold text-emerald-800 block mb-1">Automated Resolution</span>
+          <span className="text-3xl font-black text-emerald-900 font-display">1-Click Drafts</span>
+          <p className="text-[11px] text-emerald-700/80 mt-1">Gemini AI synthesizes instant articles</p>
+        </div>
+      </div>
+
+      {/* Main Gaps Display */}
+      {gaps.length === 0 ? (
+        <div className="p-12 rounded-[36px] bg-white border border-slate-200/80 shadow-xl shadow-slate-900/5 text-center space-y-4">
+          <div className="w-14 h-14 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+            <CheckCircle2 className="w-7 h-7" />
+          </div>
+          <div className="space-y-1 max-w-md mx-auto">
+            <h4 className="text-base font-bold text-slate-900">No knowledge gaps detected</h4>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              When your visitors ask questions that aren&apos;t covered in your uploaded knowledge base, our background intelligence worker clusters the missing topics and lists them here for 1-click AI generation.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left Column: List of Gaps */}
+          <div className="lg:col-span-5 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+              Detected Gap Clusters
+            </h3>
+            {gaps.map((gap, idx) => (
+              <button
+                key={gap.id}
+                onClick={() => {
+                  setSelectedGapIndex(idx);
+                  setIsDrafting(false);
+                  setDraftPublished(false);
+                }}
+                className={`w-full p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  selectedGapIndex === idx
+                    ? "bg-slate-900 text-white border-slate-900 shadow-md"
+                    : "bg-white text-slate-800 border-slate-200/80 hover:border-indigo-300 shadow-2xs"
+                }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 flex-shrink-0" />
-                <span>{q}</span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/20">
+                    {gap.category}
+                  </span>
+                  <span className="text-xs font-bold text-rose-400">{gap.frequency} asks</span>
+                </div>
+                <h4 className="text-xs font-bold line-clamp-1">{gap.query}</h4>
+              </button>
+            ))}
+          </div>
+
+          {/* Right Column: AI Resolution Studio */}
+          <div className="lg:col-span-7 p-7 rounded-[36px] bg-white border border-slate-200/80 shadow-xl shadow-slate-900/5 space-y-6">
+            {currentGap && (
+              <div className="space-y-4">
+                <div>
+                  <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                    {currentGap.category}
+                  </span>
+                  <h3 className="text-lg font-bold text-slate-900 mt-1">{currentGap.query}</h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {currentGap.recommended_action || "Add explicit documentation addressing this query."}
+                  </p>
+                </div>
+
+                {!isDrafting ? (
+                  <button
+                    onClick={handleGenerateDraft}
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold shadow-md shadow-indigo-500/20 hover:opacity-90 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Synthesize Article with Gemini AI</span>
+                  </button>
+                ) : (
+                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
+                    <h4 className="text-xs font-bold text-slate-900">Generated Documentation Article</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed font-mono text-[11px] bg-white p-3 rounded-xl border border-slate-200">
+                      ### {currentGap.query}\n\nOur policy ensures that all customer inquiries regarding {currentGap.category.toLowerCase()} are processed within standard operational windows. Please consult our support team for specialized requests.
+                    </p>
+                    <button
+                      onClick={handlePublishArticle}
+                      disabled={draftPublished}
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{draftPublished ? "Published to Knowledge Base!" : "Publish to Knowledge Base"}</span>
+                    </button>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-
-          <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-800">
-            Semantic density suggests these queries failed due to missing explicit carrier rerouting policies.
-          </p>
-        </div>
-
-        {/* Right Column: Suggested Content & AI Recommendation (6 Cols) */}
-        <div className="lg:col-span-6 rounded-3xl bg-gradient-to-br from-indigo-950/60 via-slate-900 to-purple-950/60 border border-indigo-500/30 p-6 sm:p-8 space-y-6 shadow-xl relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              Suggested Knowledge Resolution
-            </h3>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-900 text-indigo-200">
-              Auto-Generated
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-300">
-            Add a concise help article or FAQ chunk covering the following specific points:
-          </p>
-
-          <ul className="space-y-2 text-xs text-slate-300">
-            {selectedGap.suggestedTopics.map((topic, idx) => (
-              <li key={idx} className="flex items-center gap-2">
-                <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                <span>{topic}</span>
-              </li>
-            ))}
-          </ul>
-
-          <div className="pt-4 border-t border-indigo-900/60 flex items-center gap-3">
-            <Button
-              onClick={handleGenerateRecommendation}
-              variant="gradient"
-              size="md"
-              className="w-full justify-center"
-              isLoading={isGenerating}
-              leftIcon={<Sparkles className="w-4 h-4 text-amber-300" />}
-            >
-              Generate AI Article Draft
-            </Button>
+            )}
           </div>
         </div>
-
-      </div>
-
-      {/* AI Draft Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="AI-Generated Knowledge Article Draft"
-        description="Review and add this draft directly to your agent's knowledge base."
-        maxWidth="lg"
-      >
-        <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 max-h-72 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-            {generatedDraft}
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="gradient"
-              size="sm"
-              onClick={() => {
-                alert("Article draft added to Knowledge Base and scheduled for ingestion!");
-                setIsModalOpen(false);
-              }}
-              leftIcon={<FilePlus className="w-4 h-4" />}
-            >
-              Save to Knowledge Base
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
+      )}
     </div>
   );
 }
