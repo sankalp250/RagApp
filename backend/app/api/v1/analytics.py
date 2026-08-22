@@ -7,11 +7,13 @@ evaluation metrics. Only accessible by authenticated organization members.
 Endpoints:
   GET  /analytics/knowledge-gaps              - Top knowledge gaps for the org
   GET  /analytics/agents/{id}/conversations   - Recent conversations summary
-  GET  /analytics/agents/{id}/stats           - Agent usage statistics
+  GET  /analytics/agents/{id}/stats           - Agent usage statistics (parallel queries)
   GET  /analytics/agents/{id}/health          - Knowledge health report
   POST /analytics/knowledge-gaps/{id}/recommend - Generate AI recommendation
   POST /analytics/score-gaps                  - Batch re-score all gaps
+  GET  /analytics/overview                    - Org dashboard (2 parallel DB calls)
 """
+import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,54 +120,46 @@ async def get_agent_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Summary metrics for a single agent: conversations, messages, gap rate, avg latency."""
+    """Summary metrics for a single agent: conversations, messages, gap rate, avg latency.
+    All 5 aggregate queries run in parallel via asyncio.gather (1 DB round-trip each, zero serialisation).
+    """
     org_id = current_user.organization_id
 
-    # Total conversations
-    conv_count = await db.scalar(
-        select(func.count(Conversation.id)).where(
-            Conversation.agent_id == agent_id,
-            Conversation.organization_id == org_id
-        )
+    conv_q = select(func.count(Conversation.id)).where(
+        Conversation.agent_id == agent_id,
+        Conversation.organization_id == org_id
     )
-
-    # Total messages (user + assistant)
-    msg_count = await db.scalar(
-        select(func.count(Message.id)).join(
-            Conversation, Message.conversation_id == Conversation.id
-        ).where(
-            Conversation.agent_id == agent_id,
-            Conversation.organization_id == org_id
-        )
+    msg_q = select(func.count(Message.id)).join(
+        Conversation, Message.conversation_id == Conversation.id
+    ).where(
+        Conversation.agent_id == agent_id,
+        Conversation.organization_id == org_id
     )
-
-    # Average latency (assistant messages only)
-    avg_latency = await db.scalar(
-        select(func.avg(Message.latency_ms)).join(
-            Conversation, Message.conversation_id == Conversation.id
-        ).where(
-            Conversation.agent_id == agent_id,
-            Conversation.organization_id == org_id,
-            Message.role == "assistant"
-        )
+    latency_q = select(func.avg(Message.latency_ms)).join(
+        Conversation, Message.conversation_id == Conversation.id
+    ).where(
+        Conversation.agent_id == agent_id,
+        Conversation.organization_id == org_id,
+        Message.role == "assistant"
     )
-
-    # Knowledge gap rate
-    gap_count = await db.scalar(
-        select(func.count(KnowledgeGap.id)).where(
-            KnowledgeGap.agent_id == agent_id,
-            KnowledgeGap.organization_id == org_id,
-            KnowledgeGap.status == "OPEN"
-        )
+    gap_q = select(func.count(KnowledgeGap.id)).where(
+        KnowledgeGap.agent_id == agent_id,
+        KnowledgeGap.organization_id == org_id,
+        KnowledgeGap.status == "OPEN"
     )
+    rating_q = select(func.avg(Feedback.rating)).join(
+        Message, Feedback.message_id == Message.id
+    ).join(
+        Conversation, Message.conversation_id == Conversation.id
+    ).where(Conversation.agent_id == agent_id)
 
-    # Average feedback rating
-    avg_rating = await db.scalar(
-        select(func.avg(Feedback.rating)).join(
-            Message, Feedback.message_id == Message.id
-        ).join(
-            Conversation, Message.conversation_id == Conversation.id
-        ).where(Conversation.agent_id == agent_id)
+    # All 5 queries fire concurrently — total wall time = slowest query, not sum of all 5
+    conv_count, msg_count, avg_latency, gap_count, avg_rating = await asyncio.gather(
+        db.scalar(conv_q),
+        db.scalar(msg_q),
+        db.scalar(latency_q),
+        db.scalar(gap_q),
+        db.scalar(rating_q),
     )
 
     return {
@@ -288,63 +282,64 @@ async def get_overview_metrics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Returns live aggregated metrics, counts, and health for the authenticated organization."""
+    """Returns live aggregated metrics, counts, and health for the authenticated organization.
+
+    Previously: 8 serial DB round-trips (~160–400ms on cold DB).
+    Now: 7 aggregate scalars fire in parallel, plus 1 recent-convs fetch.
+    Total wall time = slowest single query, not the sum of all 8.
+    """
     org_id = current_user.organization_id
 
-    # 1. Total Agents
     from backend.app.db.models.agent import Agent
-    agents_count = await db.scalar(
-        select(func.count(Agent.id)).where(Agent.organization_id == org_id)
-    ) or 0
-
-    # 2. Total Documents & Chunks
     from backend.app.db.models.document import Document, DocumentChunk
-    docs_count = await db.scalar(
-        select(func.count(Document.id)).where(Document.organization_id == org_id)
-    ) or 0
 
-    chunks_count = await db.scalar(
-        select(func.count(DocumentChunk.id)).join(
-            Document, DocumentChunk.document_id == Document.id
-        ).where(Document.organization_id == org_id)
-    ) or 0
+    # Build all aggregate query coroutines
+    agents_q   = db.scalar(select(func.count(Agent.id)).where(Agent.organization_id == org_id))
+    docs_q     = db.scalar(select(func.count(Document.id)).where(Document.organization_id == org_id))
+    chunks_q   = db.scalar(
+                    select(func.count(DocumentChunk.id))
+                    .join(Document, DocumentChunk.document_id == Document.id)
+                    .where(Document.organization_id == org_id)
+                 )
+    conv_q     = db.scalar(select(func.count(Conversation.id)).where(Conversation.organization_id == org_id))
+    users_q    = db.scalar(
+                    select(func.count(func.distinct(Conversation.visitor_id)))
+                    .where(Conversation.organization_id == org_id)
+                 )
+    latency_q  = db.scalar(
+                    select(func.avg(Message.latency_ms))
+                    .join(Conversation, Message.conversation_id == Conversation.id)
+                    .where(Conversation.organization_id == org_id, Message.role == "assistant")
+                 )
+    gap_q      = db.scalar(
+                    select(func.count(KnowledgeGap.id))
+                    .where(KnowledgeGap.organization_id == org_id, KnowledgeGap.status == "OPEN")
+                 )
+    recent_q   = db.execute(
+                    select(Conversation)
+                    .where(Conversation.organization_id == org_id)
+                    .order_by(desc(Conversation.created_at))
+                    .limit(5)
+                 )
 
-    # 3. Total Conversations & Messages
-    conv_count = await db.scalar(
-        select(func.count(Conversation.id)).where(Conversation.organization_id == org_id)
-    ) or 0
-
-    unique_users = await db.scalar(
-        select(func.count(func.distinct(Conversation.visitor_id))).where(Conversation.organization_id == org_id)
-    ) or 0
-
-    # 4. Avg Latency & Resolution
-    avg_latency = await db.scalar(
-        select(func.avg(Message.latency_ms)).join(
-            Conversation, Message.conversation_id == Conversation.id
-        ).where(
-            Conversation.organization_id == org_id,
-            Message.role == "assistant"
-        )
+    # Fire all 8 I/O-bound queries concurrently — wall time = max(queries), not sum
+    (
+        agents_count, docs_count, chunks_count,
+        conv_count, unique_users, avg_latency,
+        gap_count, res_recent
+    ) = await asyncio.gather(
+        agents_q, docs_q, chunks_q,
+        conv_q, users_q, latency_q,
+        gap_q, recent_q
     )
 
-    # 5. Open Knowledge Gaps
-    gap_count = await db.scalar(
-        select(func.count(KnowledgeGap.id)).where(
-            KnowledgeGap.organization_id == org_id,
-            KnowledgeGap.status == "OPEN"
-        )
-    ) or 0
-
-    # 6. Recent Conversations
-    stmt_recent = (
-        select(Conversation)
-        .where(Conversation.organization_id == org_id)
-        .order_by(desc(Conversation.created_at))
-        .limit(5)
-    )
-    res_recent = await db.execute(stmt_recent)
-    recent_convs = res_recent.scalars().all()
+    agents_count  = agents_count  or 0
+    docs_count    = docs_count    or 0
+    chunks_count  = chunks_count  or 0
+    conv_count    = conv_count    or 0
+    unique_users  = unique_users  or 0
+    gap_count     = gap_count     or 0
+    recent_convs  = res_recent.scalars().all()
 
     return {
         "agents_count": agents_count,

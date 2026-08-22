@@ -6,19 +6,13 @@ import { motion } from "framer-motion";
 import {
   Bot,
   Plus,
-  Sparkles,
   Sliders,
   Code2,
-  Database,
   ArrowRight,
   CheckCircle2,
   ExternalLink,
-  Smartphone,
-  Tablet,
-  Layout,
-  Layers,
 } from "lucide-react";
-import { DEFAULT_ARCHETYPES, ChatbotArchetype } from "@/types/chatbot-studio";
+import { ARCHETYPE_LIST } from "@/types/chatbot-studio";
 import { api } from "@/lib/api";
 
 interface AgentRecord {
@@ -26,68 +20,36 @@ interface AgentRecord {
   name: string;
   description: string;
   system_prompt: string;
-  llm_provider: string;
-  model_name: string;
+  model?: string;
+  llm_provider?: string;
+  model_name?: string;
   status?: string;
   created_at?: string;
 }
 
-const TEMPLATES = [
-  {
-    id: "liquid-glass",
-    name: "Liquid Glass Enterprise",
-    category: "SaaS & E-Commerce",
-    desc: "Frosted iridescent liquid glass, purple/pink glowing gradients, floating quick-prompt chips, sub-second tool badges.",
-    previewGradient: "from-indigo-600 via-purple-600 to-pink-500",
-    icon: Sparkles,
-    badge: "Most Popular",
-  },
-  {
-    id: "chatia-mobile",
-    name: "Chatia AI Companion",
-    category: "Mobile App Assistant",
-    desc: "iPhone shell, category chips, gradient action banners, recipe/checklist cards with media carousels, bottom action bar.",
-    previewGradient: "from-pink-500 via-rose-500 to-fuchsia-600",
-    icon: Smartphone,
-    badge: "Card Stacks",
-  },
-  {
-    id: "obsidian-glow",
-    name: "Obsidian Neon Glow",
-    category: "Dark Mode & Voice",
-    desc: "Minimal deep cobalt/obsidian dark mode, glowing weather card, clean floating speech bubbles, Siri-style glowing audio orb.",
-    previewGradient: "from-blue-700 via-indigo-900 to-slate-950",
-    icon: Bot,
-    badge: "Minimal Dark",
-  },
-  {
-    id: "split-canvas",
-    name: "Tablet Split-View Canvas",
-    category: "iPad & Document Research",
-    desc: "Dual-pane layout with left history/result cards and right conversation canvas with multi-file drop zones.",
-    previewGradient: "from-sky-500 to-indigo-600",
-    icon: Tablet,
-    badge: "Multi-Doc",
-  },
-  {
-    id: "editorial-grid",
-    name: "ChaTin Editorial & Grid",
-    category: "Neo-Brutalist & Creator",
-    desc: "Soft grid paper texture, bold outlines, vibrant yellow action pills, sticker stamp cards, Playfair / serif typography.",
-    previewGradient: "from-amber-400 to-yellow-500 text-black",
-    icon: Layout,
-    badge: "Editorial Serif",
-  },
-  {
-    id: "pastel-lifestyle",
-    name: "Pastel Social & Lifestyle",
-    category: "SMM & Influencer",
-    desc: "Soft pink cloud background, serif headings, checklist cards, photo collage bubbles, trending topic cards.",
-    previewGradient: "from-pink-400 via-rose-300 to-amber-200 text-slate-900",
-    icon: Sparkles,
-    badge: "Aesthetic SMM",
-  },
-];
+
+
+
+const TEMPLATES = ARCHETYPE_LIST.map((arch) => ({
+  id: arch.archetype,
+  name: arch.name,
+  category: arch.description?.split("—")[1]?.trim() || arch.description || "",
+  desc: arch.description || "",
+  previewColor: arch.previewColor || "#6366f1",
+  primaryGradient: arch.theme.primaryGradient,
+  icon: Bot,
+  badge: null as string | null,
+  avatar: arch.modules.welcomeHeader.avatar,
+  agentName: arch.behavior.agentName,
+}));
+
+// Mark first as most popular
+if (TEMPLATES[0]) TEMPLATES[0].badge = "Most Popular";
+if (TEMPLATES[5]) TEMPLATES[5].badge = "Commerce";
+if (TEMPLATES[6]) TEMPLATES[6].badge = "Support";
+
+
+
 
 export default function ChatbotsPage() {
   const [agents, setAgents] = useState<AgentRecord[]>([]);
@@ -172,25 +134,52 @@ export default function ChatbotsPage() {
                     {bot.description || "Production AI Agent"}
                   </p>
 
-                  <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700">Model:</span>
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-bold text-slate-700">
-                      {bot.model_name || "gemini-1.5-flash"}
-                    </span>
+                  {/* Interactive Model Switcher */}
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-700">AI Model:</span>
+                      <span className="text-[10px] text-slate-400">Click to switch</span>
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={bot.model || bot.model_name || "gemini-2.5-flash"}
+                        onChange={async (e) => {
+                          const newModel = e.target.value;
+                          setAgents((prev) =>
+                            prev.map((a) => (a.id === bot.id ? { ...a, model: newModel } : a))
+                          );
+                          try {
+                            await api.patch(`/agents/${bot.id}`, { model: newModel });
+                          } catch (err) {
+                            console.error("Failed to update model", err);
+                          }
+                        }}
+                        className="w-full bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold rounded-xl px-3 py-2 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all cursor-pointer"
+                      >
+                        <optgroup label="Google Gemini">
+                          <option value="gemini-2.5-flash">✦ Gemini 2.5 Flash (Recommended)</option>
+                          <option value="gemini-1.5-pro">🧠 Gemini 1.5 Pro (2M Context)</option>
+                        </optgroup>
+                        <optgroup label="OpenAI">
+                          <option value="gpt-4o-mini">⚡ GPT-4o Mini (Fast & Precise)</option>
+                          <option value="gpt-4o">👑 GPT-4o Flagship</option>
+                        </optgroup>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 pt-2">
                   <Link
                     href={`/dashboard/chatbots/new?agent_id=${bot.id}`}
-                    className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 text-center transition-colors flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-600 hover:text-white text-xs font-bold text-indigo-700 text-center transition-all flex items-center justify-center gap-1.5 shadow-2xs group"
                   >
                     <Sliders className="w-3.5 h-3.5" />
-                    <span>Configure</span>
+                    <span>Configure in Studio</span>
                   </Link>
                   <Link
                     href={`/dashboard/chatbots/new?agent_id=${bot.id}&tab=embed`}
-                    className="p-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors"
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                     title="Embed Code"
                   >
                     <Code2 className="w-4 h-4" />
@@ -223,18 +212,22 @@ export default function ChatbotsPage() {
               >
                 <div>
                   <div
-                    className={`h-24 w-full rounded-2xl bg-gradient-to-r ${tmpl.previewGradient} p-4 flex flex-col justify-between shadow-xs mb-4`}
+                    className="h-24 w-full rounded-2xl p-4 flex flex-col justify-between shadow-sm mb-4"
+                    style={{ background: tmpl.primaryGradient }}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="px-2 py-0.5 rounded-full bg-white/30 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider">
-                        {tmpl.badge}
-                      </span>
-                      <Icon className="w-5 h-5 text-white" />
+                      {tmpl.badge && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/30 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider">
+                          {tmpl.badge}
+                        </span>
+                      )}
+                      <div className="ml-auto text-xl">{(tmpl as any).avatar || "🤖"}</div>
                     </div>
-                    <span className="text-xs font-bold text-white drop-shadow-xs">
-                      {tmpl.category}
+                    <span className="text-xs font-bold text-white drop-shadow-sm">
+                      Agent: {(tmpl as any).agentName || "AI Assistant"}
                     </span>
                   </div>
+
 
                   <h4 className="font-bold text-base text-slate-900">{tmpl.name}</h4>
                   <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{tmpl.desc}</p>

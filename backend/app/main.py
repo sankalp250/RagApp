@@ -46,11 +46,11 @@ app.add_middleware(ObservabilityMiddleware)
 # Token-bucket rate limiting middleware (Redis-backed with in-memory fallback)
 app.add_middleware(RateLimitMiddleware)
 
-# CORS middleware
-origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else ["*"]
+# CORS middleware (allows local file:/// (null origin), localhost, and all embed domains)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if "*" not in origins else ["*"],
+    allow_origins=["*"],
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,7 +78,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "An internal server error occurred", "request_id": getattr(request.state, "request_id", "unknown")}
+        content={"detail": f"{exc.__class__.__name__}: {str(exc)}", "request_id": getattr(request.state, "request_id", "unknown")}
     )
 
 
@@ -120,6 +120,25 @@ async def readiness_check():
 
 # Register API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Serve standalone widget script & demo page directly
+from fastapi.responses import FileResponse
+import os
+
+@app.get("/widget.js", include_in_schema=False)
+async def serve_widget_js():
+    widget_path = os.path.join(os.getcwd(), "widget.js")
+    if os.path.exists(widget_path):
+        return FileResponse(widget_path, media_type="application/javascript")
+    alt_path = os.path.join(os.getcwd(), "frontend", "public", "widget.js")
+    return FileResponse(alt_path, media_type="application/javascript")
+
+@app.get("/demo", include_in_schema=False)
+@app.get("/test", include_in_schema=False)
+async def serve_demo_html():
+    demo_path = os.path.join(os.getcwd(), "index.html")
+    return FileResponse(demo_path, media_type="text/html")
+
 
 
 if __name__ == "__main__":

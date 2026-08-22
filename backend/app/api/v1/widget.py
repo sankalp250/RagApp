@@ -10,6 +10,7 @@ Endpoints:
   POST /widget/{public_key}/messages/{id}/feedback - Widget feedback
 """
 import json
+import asyncio
 from typing import Optional, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -92,7 +93,7 @@ async def widget_chat(
 
     if request.stream:
         return StreamingResponse(
-            _widget_stream_chat(db, str(agent.id), str(agent.organization_id), request),
+            _widget_stream_chat(str(agent.id), str(agent.organization_id), request),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -118,32 +119,21 @@ async def widget_chat(
 
 
 async def _widget_stream_chat(
-    db: AsyncSession,
     agent_id: str,
     organization_id: str,
     request: ChatRequest
 ) -> AsyncGenerator[str, None]:
-    """SSE generator for widget streaming chat."""
+    """SSE generator for widget streaming chat (instant real-time token yield with zero DB hold)."""
     try:
-        response = await ChatService.chat(
-            db=db,
+        async for sse_event in ChatService.chat_stream(
             agent_id=agent_id,
             organization_id=organization_id,
             request=request
-        )
-
-        # Send meta event
-        yield f"data: {json.dumps({'event': 'meta', 'conversation_id': response.conversation_id, 'message_id': response.message_id})}\n\n"
-
-        # Stream answer word by word
-        words = response.answer.split(" ")
-        for i, word in enumerate(words):
-            token = word + (" " if i < len(words) - 1 else "")
-            yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
-
-        yield f"data: {json.dumps({'event': 'done', 'knowledge_gap_detected': response.knowledge_gap_detected})}\n\n"
+        ):
+            yield f"data: {json.dumps(sse_event)}\n\n"
 
     except Exception as e:
+        logger.error(f"Widget stream chat error: {e}", exc_info=e)
         yield f"data: {json.dumps({'event': 'error', 'message': 'Chat failed. Please try again.'})}\n\n"
 
 

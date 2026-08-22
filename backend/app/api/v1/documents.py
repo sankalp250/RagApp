@@ -38,7 +38,21 @@ async def list_documents(
         organization_id=current_user.organization_id,
         agent_id=agent_id
     )
-    return documents
+    return [
+        DocumentResponse(
+            id=d.id,
+            organization_id=d.organization_id,
+            agent_id=d.agent_id,
+            filename=d.filename,
+            file_size_bytes=d.file_size_bytes or 0,
+            mime_type=d.mime_type or "text/plain",
+            status=d.status or "READY",
+            chunk_count=d.chunk_count or 0,
+            error_message=d.error_message,
+            created_at=d.created_at.isoformat() if d.created_at else None
+        )
+        for d in documents
+    ]
 
 
 @router.post(
@@ -84,7 +98,124 @@ async def upload_document(
             file_bytes=file_bytes,
             mime_type=content_type
         )
-        return document
+        return DocumentResponse(
+            id=document.id,
+            organization_id=document.organization_id,
+            agent_id=document.agent_id,
+            filename=document.filename,
+            file_size_bytes=document.file_size_bytes or len(file_bytes),
+            mime_type=document.mime_type or "application/octet-stream",
+            status=document.status or "UPLOADED",
+            chunk_count=document.chunk_count or 0,
+            error_message=document.error_message,
+            created_at=document.created_at.isoformat() if document.created_at else None
+        )
+    except AgentNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+from pydantic import BaseModel
+
+class CrawlUrlRequest(BaseModel):
+    url: str
+
+@router.post(
+    "/agents/{agent_id}/documents/crawl",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crawl a URL and ingest into vector knowledge base"
+)
+async def crawl_and_ingest_url(
+    agent_id: str,
+    payload: CrawlUrlRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Crawls a webpage URL (or sitemap page), strips HTML tags to extract clean text,
+    and enqueues the async chunking, embedding, and vector indexing pipeline.
+    """
+    import httpx
+    from urllib.parse import urlparse
+
+    target_url = payload.url.strip()
+    if not target_url.startswith("http://") and not target_url.startswith("https://"):
+        target_url = f"https://{target_url}"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(target_url)
+            resp.raise_for_status()
+            html_content = resp.text
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not reach or fetch URL '{target_url}': {str(e)}"
+        )
+
+    # Extract clean text using Python built-in HTMLParser (zero dependencies)
+    import re
+    from html.parser import HTMLParser
+
+    class CleanTextHTMLParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.texts = []
+            self.skip_depth = 0
+            self.skip_tags = {"script", "style", "svg", "noscript", "head"}
+
+        def handle_starttag(self, tag, attrs):
+            if tag.lower() in self.skip_tags:
+                self.skip_depth += 1
+
+        def handle_endtag(self, tag):
+            if tag.lower() in self.skip_tags and self.skip_depth > 0:
+                self.skip_depth -= 1
+
+        def handle_data(self, data):
+            if self.skip_depth == 0:
+                clean = data.strip()
+                if clean:
+                    self.texts.append(clean)
+
+    parser = CleanTextHTMLParser()
+    try:
+        parser.feed(html_content)
+        clean_text = "\n\n".join(parser.texts)
+    except Exception:
+        clean_text = re.sub(r"<[^>]+>", " ", html_content)
+        clean_text = re.sub(r"\s+", " ", clean_text).strip()
+
+    if not clean_text or len(clean_text.strip()) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The target URL returned empty or unreadable text content."
+        )
+
+    parsed = urlparse(target_url)
+    display_filename = f"Web: {parsed.netloc}{parsed.path if parsed.path and parsed.path != '/' else ''}"
+
+    try:
+        document = await DocumentService.upload_document(
+            db=db,
+            organization_id=current_user.organization_id,
+            agent_id=agent_id,
+            filename=display_filename,
+            file_bytes=clean_text.encode("utf-8"),
+            mime_type="text/markdown"
+        )
+        return DocumentResponse(
+            id=document.id,
+            organization_id=document.organization_id,
+            agent_id=document.agent_id,
+            filename=document.filename,
+            file_size_bytes=document.file_size_bytes or len(clean_text),
+            mime_type=document.mime_type or "text/markdown",
+            status=document.status or "UPLOADED",
+            chunk_count=document.chunk_count or 0,
+            error_message=document.error_message,
+            created_at=document.created_at.isoformat() if document.created_at else None
+        )
     except AgentNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

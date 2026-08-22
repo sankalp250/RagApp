@@ -9,6 +9,8 @@ from backend.app.domains.documents.storage import get_storage_backend
 from backend.app.workers.queue import job_queue
 from backend.app.workers.document_jobs import process_document_job
 from backend.app.core.exceptions import DocumentNotFoundException, AgentNotFoundException
+from backend.app.core.cache import invalidate_agent_cache
+from backend.app.ai.rag_engine import invalidate_agent_chunks_cache
 
 
 class DocumentService:
@@ -58,9 +60,11 @@ class DocumentService:
         if not res_agent.scalars().first():
             raise AgentNotFoundException(f"Agent '{agent_id}' not found in this organization")
 
-        # 2. Save file
+        # 2. Save file with sanitized storage name
         storage = get_storage_backend()
-        unique_filename = f"{organization_id}/{agent_id}/{uuid.uuid4()}_{filename}"
+        import re
+        safe_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', filename)
+        unique_filename = f"{organization_id}/{agent_id}/{uuid.uuid4()}_{safe_name}"
         storage_path = await storage.save_file(file_bytes, unique_filename)
 
         # 3. Create Document DB record
@@ -84,11 +88,16 @@ class DocumentService:
 
     @staticmethod
     async def delete_document(db: AsyncSession, organization_id: str, document_id: str) -> bool:
-        """Deletes document, chunks, and physical file."""
+        """Deletes document, chunks, physical file, and invalidates agent caches."""
         doc = await DocumentService.get_document(db, organization_id, document_id)
+        agent_id = doc.agent_id
         storage = get_storage_backend()
         await storage.delete_file(doc.storage_path)
 
         await db.delete(doc)
         await db.commit()
+
+        # Invalidate vector index cache and response cache
+        invalidate_agent_chunks_cache(agent_id)
+        await invalidate_agent_cache(organization_id, agent_id)
         return True

@@ -7,6 +7,8 @@ from backend.app.db.models.agent import Agent
 from backend.app.db.models.organization import Organization
 from backend.app.schemas.agent import AgentCreate, AgentUpdate
 from backend.app.core.exceptions import AgentNotFoundException, TenantAccessDeniedException
+from backend.app.core.cache import invalidate_agent_cache, invalidate_widget_config
+from backend.app.ai.rag_engine import invalidate_agent_chunks_cache
 
 
 class AgentService:
@@ -24,10 +26,15 @@ class AgentService:
     @staticmethod
     async def create_agent(db: AsyncSession, organization_id: str, payload: AgentCreate) -> Agent:
         """Creates a new agent for the organization with customizable config."""
-        config_dict = (
-            payload.configuration.model_dump()
-            if payload.configuration
-            else {
+        if payload.configuration:
+            if hasattr(payload.configuration, "model_dump"):
+                config_dict = payload.configuration.model_dump()
+            elif isinstance(payload.configuration, dict):
+                config_dict = payload.configuration
+            else:
+                config_dict = dict(payload.configuration)
+        else:
+            config_dict = {
                 "temperature": 0.3,
                 "max_tokens": 800,
                 "greeting_message": "Hello! How can I help you today?",
@@ -36,7 +43,6 @@ class AgentService:
                 "placeholder_text": "Ask a question...",
                 "suggested_questions": ["What are your business hours?", "How do returns work?"]
             }
-        )
 
         agent = Agent(
             organization_id=organization_id,
@@ -96,12 +102,29 @@ class AgentService:
 
         await db.commit()
         await db.refresh(agent)
+
+        # Invalidate multi-tier caches immediately
+        await invalidate_agent_cache(organization_id, agent_id)
+        if agent.public_key:
+            await invalidate_widget_config(agent.public_key)
+        invalidate_agent_chunks_cache(agent_id)
+
         return agent
 
     @staticmethod
     async def delete_agent(db: AsyncSession, organization_id: str, agent_id: str) -> bool:
         """Deletes an agent and cascades all associated documents/conversations."""
         agent = await AgentService.get_agent(db, organization_id, agent_id)
+        public_key = agent.public_key
+
         await db.delete(agent)
         await db.commit()
+
+        # Invalidate multi-tier caches
+        await invalidate_agent_cache(organization_id, agent_id)
+        if public_key:
+            await invalidate_widget_config(public_key)
+        invalidate_agent_chunks_cache(agent_id)
+
         return True
+

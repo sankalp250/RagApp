@@ -2,25 +2,33 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
 import jwt
-import bcrypt
+try:
+    import bcrypt
+except ImportError:
+    bcrypt = None
+import hashlib
 from backend.app.core.config import settings
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifies a plain-text password against a bcrypt hash."""
-    try:
-        password_bytes = plain_password.encode("utf-8")[:72]
-        hashed_bytes = hashed_password.encode("utf-8")
-        return bcrypt.checkpw(password_bytes, hashed_bytes)
-    except Exception:
-        return False
+    """Verifies a plain-text password against a bcrypt/hash."""
+    if bcrypt:
+        try:
+            password_bytes = plain_password.encode("utf-8")[:72]
+            hashed_bytes = hashed_password.encode("utf-8")
+            return bcrypt.checkpw(password_bytes, hashed_bytes)
+        except Exception:
+            return False
+    return hashlib.sha256(plain_password.encode("utf-8")).hexdigest() == hashed_password
 
 
 def get_password_hash(password: str) -> str:
-    """Hashes a plain-text password using bcrypt."""
-    password_bytes = password.encode("utf-8")[:72]
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password_bytes, salt).decode("utf-8")
+    """Hashes a plain-text password using bcrypt with fallback."""
+    if bcrypt:
+        password_bytes = password.encode("utf-8")[:72]
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(password_bytes, salt).decode("utf-8")
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
 def create_access_token(

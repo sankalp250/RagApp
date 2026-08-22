@@ -222,9 +222,10 @@ export interface ChatbotThemeConfig {
     showTypingDots: boolean;
   };
 
-  // ── Behavior ──
+  // ── Behavior & Model ──
   behavior: {
     agentName: string;
+    model: "gemini-2.5-flash" | "gemini-1.5-pro" | "gpt-4o-mini" | "gpt-4o" | string;
     systemPrompt: string;
     ragConfidenceThreshold: number;
     fallbackMessage: string;
@@ -244,20 +245,20 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     description: "Apple-inspired translucent frosted glass interface with depth and refraction.",
     previewColor: "#6366f1",
     theme: {
-      primaryGradient: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%)",
+      primaryGradient: "linear-gradient(135deg, rgba(99, 102, 241, 0.9) 0%, rgba(139, 92, 246, 0.85) 50%, rgba(6, 182, 212, 0.85) 100%)",
       accentColor: "#8b5cf6",
-      backgroundColor: "rgba(15,15,30,0.95)",
+      backgroundColor: "rgba(18, 20, 38, 0.65)",
       bgPattern: "ambient-mesh",
       userBubbleBg: "linear-gradient(135deg, #6366f1, #8b5cf6)",
       userBubbleText: "#ffffff",
-      botBubbleBg: "rgba(255,255,255,0.10)",
-      botBubbleText: "#f1f5f9",
-      glassBlur: 24,
-      glassOpacity: 10,
-      glassSaturation: 180,
+      botBubbleBg: "rgba(255, 255, 255, 0.12)",
+      botBubbleText: "#f8fafc",
+      glassBlur: 28,
+      glassOpacity: 65,
+      glassSaturation: 190,
       borderGlow: true,
-      cardBg: "rgba(255,255,255,0.07)",
-      shadowIntensity: 60,
+      cardBg: "rgba(255, 255, 255, 0.08)",
+      shadowIntensity: 85,
       launcherBg: "linear-gradient(135deg, #6366f1, #8b5cf6)",
       launcherText: "#ffffff",
       launcherSize: "md",
@@ -310,6 +311,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Aria",
+      model: "gemini-2.5-flash",
       systemPrompt: "You are a helpful AI assistant. Be concise, friendly and professional.",
       ragConfidenceThreshold: 0.7,
       fallbackMessage: "I don't have information on that. Would you like to connect with a human agent?",
@@ -393,6 +395,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Aria",
+      model: "gemini-2.5-flash",
       systemPrompt: "You are a warm, helpful AI companion. Be friendly, encouraging and personalized.",
       ragConfidenceThreshold: 0.65,
       fallbackMessage: "Hmm, I'm not sure about that. Let me connect you with someone who can help!",
@@ -476,6 +479,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Sage",
+      model: "gpt-4o-mini",
       systemPrompt: "You are an expert research and editorial assistant. Be precise, informative and cite sources.",
       ragConfidenceThreshold: 0.8,
       fallbackMessage: "I don't have enough context on that topic. Could you provide more details?",
@@ -559,6 +563,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Hex",
+      model: "gemini-2.5-flash",
       systemPrompt: "You are a technical AI assistant for developers. Be precise, use code examples, and be concise.",
       ragConfidenceThreshold: 0.75,
       fallbackMessage: "No relevant documentation found. Try rephrasing or open a support ticket.",
@@ -642,6 +647,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Luna",
+      model: "gemini-2.5-flash",
       systemPrompt: "You are a warm, uplifting beauty and wellness assistant. Be encouraging, personalized and caring.",
       ragConfidenceThreshold: 0.65,
       fallbackMessage: "I'm not sure about that! Let me connect you with one of our experts. 💕",
@@ -725,6 +731,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Scout",
+      model: "gpt-4o-mini",
       systemPrompt: "You are a commerce assistant. Help users find products, check orders, understand policies.",
       ragConfidenceThreshold: 0.7,
       fallbackMessage: "I couldn't find that product. Would you like me to show you similar items?",
@@ -808,6 +815,7 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
     },
     behavior: {
       agentName: "Max",
+      model: "gemini-2.5-flash",
       systemPrompt: "You are a customer support assistant. Be empathetic, solution-focused and know when to escalate.",
       ragConfidenceThreshold: 0.75,
       fallbackMessage: "I wasn't able to resolve this automatically. Let me connect you with a support agent.",
@@ -859,7 +867,8 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
       inputPlaceholder: "Ask me anything...",
       showTypingDots: true,
     },
-    behavior: { agentName: "Aria", systemPrompt: "You are a warm, helpful AI companion.", ragConfidenceThreshold: 0.65, fallbackMessage: "Let me connect you with someone!", enableShopifyTool: false, enableSlackEscalation: false, enableEmailReceipts: false, enableCustomWebhooks: false },
+    behavior: { agentName: "Aria",
+      model: "gemini-2.5-flash", systemPrompt: "You are a warm, helpful AI companion.", ragConfidenceThreshold: 0.65, fallbackMessage: "Let me connect you with someone!", enableShopifyTool: false, enableSlackEscalation: false, enableEmailReceipts: false, enableCustomWebhooks: false },
   },
 
   "split-canvas": {
@@ -902,7 +911,8 @@ export const DEFAULT_ARCHETYPES: Record<ChatbotArchetype, ChatbotThemeConfig> = 
       inputPlaceholder: "Describe your issue...",
       showTypingDots: true,
     },
-    behavior: { agentName: "Max", systemPrompt: "You are a customer support assistant.", ragConfidenceThreshold: 0.75, fallbackMessage: "Let me connect you with a support agent.", enableShopifyTool: false, enableSlackEscalation: true, enableEmailReceipts: true, enableCustomWebhooks: true },
+    behavior: { agentName: "Max",
+      model: "gemini-2.5-flash", systemPrompt: "You are a customer support assistant.", ragConfidenceThreshold: 0.75, fallbackMessage: "Let me connect you with a support agent.", enableShopifyTool: false, enableSlackEscalation: true, enableEmailReceipts: true, enableCustomWebhooks: true },
   },
 };
 

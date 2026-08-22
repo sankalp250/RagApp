@@ -1,4 +1,5 @@
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
@@ -14,7 +15,7 @@ class DocumentResponse(BaseModel):
     status: str
     chunk_count: int
     error_message: Optional[str] = None
-    created_at: str
+    created_at: Optional[Union[datetime, str]] = None
 
 
 class DocumentStatusResponse(BaseModel):

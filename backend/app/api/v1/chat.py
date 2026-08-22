@@ -60,7 +60,7 @@ async def chat_with_agent(
 
     if request.stream:
         return StreamingResponse(
-            _stream_chat(db, agent_id, organization_id, request),
+            _stream_chat(agent_id, organization_id, request),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -85,54 +85,24 @@ async def chat_with_agent(
 
 
 async def _stream_chat(
-    db: AsyncSession,
     agent_id: str,
     organization_id: str,
     request: ChatRequest
 ) -> AsyncGenerator[str, None]:
     """
-    SSE generator — runs the full RAG pipeline then streams the answer token-by-token.
-    (True token streaming requires the Gemini streaming API; here we simulate it
-    by breaking the full answer into words after retrieval for MVP. Phase 6 upgrades
-    this to real streaming with genai.stream_generate_content.)
+    SSE generator — runs real-time native token streaming with decoupled database sessions.
     """
     try:
-        # Run the full RAG pipeline first
-        response = await ChatService.chat(
-            db=db,
+        async for sse_event in ChatService.chat_stream(
             agent_id=agent_id,
             organization_id=organization_id,
             request=request
-        )
-
-        # Stream metadata event first
-        meta = {
-            "event": "meta",
-            "conversation_id": response.conversation_id,
-            "message_id": response.message_id,
-            "knowledge_gap_detected": response.knowledge_gap_detected,
-            "sources": [s.model_dump() for s in response.sources]
-        }
-        yield f"data: {json.dumps(meta)}\n\n"
-
-        # Stream answer word by word (simulated streaming for MVP)
-        words = response.answer.split(" ")
-        for i, word in enumerate(words):
-            chunk_data = {"event": "token", "token": word + (" " if i < len(words) - 1 else "")}
-            yield f"data: {json.dumps(chunk_data)}\n\n"
-
-        # Send done event
-        done_data = {
-            "event": "done",
-            "input_tokens": response.input_tokens,
-            "output_tokens": response.output_tokens,
-            "latency_ms": response.latency_ms
-        }
-        yield f"data: {json.dumps(done_data)}\n\n"
+        ):
+            yield f"data: {json.dumps(sse_event)}\n\n"
 
     except Exception as e:
-        error_data = {"event": "error", "message": str(e)}
-        yield f"data: {json.dumps(error_data)}\n\n"
+        logger.error(f"Chat stream error: {e}", exc_info=e)
+        yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
 
 
 @router.get(

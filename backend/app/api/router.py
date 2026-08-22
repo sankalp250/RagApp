@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from backend.app.api.v1 import auth, organizations, agents, documents, chat, widget, analytics
+from backend.app.api.v1 import telemetry
 
 api_router = APIRouter()
 
@@ -23,3 +24,6 @@ api_router.include_router(widget.router, prefix="/widget", tags=["Widget"])
 
 # ─── Analytics & Intelligence ────────────────────────────────────────────────
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+
+# ─── In-Process Telemetry (no auth required for internal use) ─────────────────
+api_router.include_router(telemetry.router, prefix="/telemetry", tags=["Telemetry"])

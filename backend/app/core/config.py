@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     DEFAULT_LLM_PROVIDER: str = "gemini"
     FALLBACK_LLM_PROVIDER: str = "groq"
-    GROQ_FALLBACK_MODEL: str = "qwen-qwq-32b"
+    GROQ_FALLBACK_MODEL: str = "openai/gpt-oss-20b"
     DEFAULT_EMBEDDING_PROVIDER: str = "gemini"
     EMBEDDING_DIMENSION: int = 768
 

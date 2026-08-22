@@ -95,4 +95,6 @@ class CircuitBreaker:
 
 # Global Circuit Breakers for AI providers
 gemini_breaker = CircuitBreaker(name="gemini_llm", failure_threshold=3, recovery_timeout=30.0, call_timeout=15.0)
+openai_breaker = CircuitBreaker(name="openai_llm", failure_threshold=3, recovery_timeout=30.0, call_timeout=15.0)
 groq_breaker = CircuitBreaker(name="groq_llm", failure_threshold=3, recovery_timeout=30.0, call_timeout=15.0)
+

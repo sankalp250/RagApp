@@ -1,4 +1,5 @@
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
+from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -17,7 +18,7 @@ class AgentCreate(BaseModel):
     description: Optional[str] = None
     model: str = "gemini-2.5-flash"
     system_prompt: Optional[str] = None
-    configuration: Optional[AgentConfigurationSchema] = None
+    configuration: Optional[Dict[str, Any]] = None
 
 
 class AgentUpdate(BaseModel):
@@ -41,7 +42,7 @@ class AgentResponse(BaseModel):
     configuration: Dict[str, Any]
     status: str
     public_key: str
-    created_at: str
+    created_at: Optional[Union[datetime, str]] = None
 
 
 class WidgetSessionResponse(BaseModel):
