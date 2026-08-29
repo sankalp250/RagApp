@@ -35,32 +35,56 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         return getattr(response, "values", [])
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        """
+        Embeds multiple texts using native batching.
+        Reduces multiple round-trips to a single network call with L1 caching.
+        """
         if not self.client:
             raise ValueError("Gemini API key is not configured.")
-        
-        async def _embed_single(text: str) -> List[float]:
-            cached = get_cached_embedding(text)
-            if cached:
-                return cached
-            try:
-                response = await self.client.aio.models.embed_content(
-                    model=self.model,
-                    contents=text
-                )
-                if hasattr(response, "embeddings") and response.embeddings:
-                    vals = response.embeddings[0].values
-                elif hasattr(response, "embedding") and hasattr(response.embedding, "values"):
-                    vals = response.embedding.values
-                else:
-                    vals = getattr(response, "values", [])
-                set_cached_embedding(text, vals)
-                return vals
-            except Exception:
-                vals = await asyncio.to_thread(self._sync_embed, text)
-                set_cached_embedding(text, vals)
-                return vals
+        if not texts:
+            return []
 
-        return await asyncio.gather(*[_embed_single(t) for t in texts])
+        # Check L1 cache first for each text
+        results: List[Optional[List[float]]] = [get_cached_embedding(t) for t in texts]
+        missing_indices = [i for i, v in enumerate(results) if v is None]
+        missing_texts = [texts[i] for i in missing_indices]
+
+        if not missing_texts:
+            return [r for r in results if r is not None]
+
+        try:
+            # Native Batch Request to Gemini API
+            response = await self.client.aio.models.embed_content(
+                model=self.model,
+                contents=missing_texts
+            )
+            
+            extracted_embeddings: List[List[float]] = []
+            if hasattr(response, "embeddings") and response.embeddings:
+                extracted_embeddings = [e.values for e in response.embeddings]
+            elif hasattr(response, "embedding") and hasattr(response.embedding, "values"):
+                extracted_embeddings = [response.embedding.values]
+            else:
+                extracted_embeddings = getattr(response, "values", [])
+
+            if len(extracted_embeddings) == len(missing_texts):
+                for idx, text, emb in zip(missing_indices, missing_texts, extracted_embeddings):
+                    results[idx] = emb
+                    set_cached_embedding(text, emb)
+                return [r for r in results if r is not None]
+        except Exception as e:
+            logger.warning(f"Native batch embed notice ({e}), falling back to concurrent thread execution")
+
+        # Fallback to concurrent single embeddings if batch API signature differs
+        async def _embed_fallback(t: str) -> List[float]:
+            v = await asyncio.to_thread(self._sync_embed, t)
+            set_cached_embedding(t, v)
+            return v
+
+        fallback_res = await asyncio.gather(*[_embed_fallback(t) for t in missing_texts])
+        for idx, emb in zip(missing_indices, fallback_res):
+            results[idx] = emb
+        return [r for r in results if r is not None]
 
     async def embed_query(self, query: str) -> List[float]:
         if not self.client:

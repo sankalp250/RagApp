@@ -635,9 +635,21 @@
         messagesContainer.appendChild(msgDiv);
 
         let fullText = '';
+        let renderScheduled = false;
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
+
+        function scheduleRender() {
+          if (!renderScheduled) {
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+              bubbleDiv.innerHTML = renderMarkdown(fullText);
+              messagesContainer.scrollTop = messagesContainer.scrollHeight;
+              renderScheduled = false;
+            });
+          }
+        }
 
         while (true) {
           const { value, done } = await reader.read();
@@ -656,15 +668,17 @@
                   localStorage.setItem(STORAGE_KEY_CONV, conversationId);
                 } else if (data.event === 'token' && data.token) {
                   fullText += data.token;
-                  bubbleDiv.innerHTML = renderMarkdown(fullText);
-                  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                  scheduleRender();
                 } else if (data.event === 'done') {
+                  bubbleDiv.innerHTML = renderMarkdown(fullText);
                   messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 }
               } catch (e) {}
             }
           }
         }
+        bubbleDiv.innerHTML = renderMarkdown(fullText);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
       } else {
         const data = await response.json();
         if (data.conversation_id) {

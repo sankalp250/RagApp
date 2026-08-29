@@ -428,7 +428,24 @@ async def _call_rewrite_llm(prompt: str) -> str:
     return ""
 
 
-_INDEX_BUILD_LOCKS: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+class _IndexLockManager:
+    """Bounded, thread-safe lock manager for single-flight index building."""
+    def __init__(self, maxsize: int = 1000):
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._maxsize = maxsize
+
+    def get_lock(self, agent_id: str) -> asyncio.Lock:
+        if agent_id not in self._locks:
+            if len(self._locks) >= self._maxsize:
+                # Evict unlocked keys to bound memory
+                to_remove = [k for k, l in self._locks.items() if not l.locked()]
+                for k in to_remove[:self._maxsize // 2]:
+                    self._locks.pop(k, None)
+            self._locks[agent_id] = asyncio.Lock()
+        return self._locks[agent_id]
+
+
+_INDEX_LOCK_MGR = _IndexLockManager(maxsize=1000)
 
 
 async def _get_or_build_index_internal(
@@ -475,7 +492,7 @@ async def _get_or_build_index(
         return cached
 
     # Single-flight deduplication: ensure only one task queries Supabase per agent
-    async with _INDEX_BUILD_LOCKS[agent_id]:
+    async with _INDEX_LOCK_MGR.get_lock(agent_id):
         # Double-check cache inside critical section
         cached = _AGENT_CHUNKS_CACHE.get(agent_id)
         if cached is not None:

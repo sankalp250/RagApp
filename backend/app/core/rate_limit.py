@@ -54,9 +54,43 @@ class BoundedMemoryBucket:
 _MEM_BUCKETS = BoundedMemoryBucket(maxsize=10000)
 
 
+_LUA_TOKEN_BUCKET = """
+local key = KEYS[1]
+local capacity = tonumber(ARGV[1])
+local refill_rate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local requested = 1
+
+local data = redis.call('HMGET', key, 'tokens', 'last_refill')
+local tokens = tonumber(data[1])
+local last_refill = tonumber(data[2])
+
+if not tokens then
+    tokens = capacity
+    last_refill = now
+else
+    local elapsed = math.max(0, now - last_refill)
+    tokens = math.min(capacity, tokens + elapsed * refill_rate)
+    last_refill = now
+end
+
+if tokens >= requested then
+    tokens = tokens - requested
+    redis.call('HMSET', key, 'tokens', tokens, 'last_refill', last_refill)
+    redis.call('EXPIRE', key, math.ceil(capacity / refill_rate) + 10)
+    return {1, math.floor(tokens)}
+else
+    redis.call('HMSET', key, 'tokens', tokens, 'last_refill', last_refill)
+    redis.call('EXPIRE', key, math.ceil(capacity / refill_rate) + 10)
+    return {0, math.floor(tokens)}
+end
+"""
+
+
 class RateLimiter:
     """
-    Token bucket rate limiter supporting distributed Redis and in-memory LRU fallback.
+    High-performance token bucket rate limiter supporting atomic distributed Redis Lua script
+    and bounded thread-safe in-memory LRU fallback.
     """
     def __init__(self, capacity: int, refill_rate: float, use_redis: bool = True):
         self.capacity = capacity
@@ -71,25 +105,22 @@ class RateLimiter:
         return _MEM_BUCKETS.check(key, self.capacity, self.refill_rate)
 
     async def _redis_check(self, redis, key: str) -> Tuple[bool, int]:
-        """Redis sliding window with nanosecond collision avoidance."""
+        """Atomic O(1) Redis Token Bucket via Lua script."""
         try:
             now = time.time()
-            window = self.capacity / self.refill_rate
-            window_start = now - window
-
-            pipe = redis.pipeline()
-            pipe.zremrangebyscore(key, 0, window_start)
-            pipe.zcard(key)
-            pipe.zadd(key, {f"{now}:{time.monotonic_ns()}": now})
-            pipe.expire(key, int(window) + 10)
-            results = await pipe.execute()
-
-            count = results[1]
-            allowed = count < self.capacity
-            remaining = max(0, self.capacity - count - 1)
+            res = await redis.eval(
+                _LUA_TOKEN_BUCKET,
+                1,
+                key,
+                self.capacity,
+                self.refill_rate,
+                now
+            )
+            allowed = bool(res[0] == 1)
+            remaining = int(res[1])
             return allowed, remaining
         except Exception as e:
-            logger.warning(f"Redis rate limit check failed, falling back to memory: {e}")
+            logger.debug(f"Redis rate limit check failed, falling back to memory: {e}")
             return _MEM_BUCKETS.check(key, self.capacity, self.refill_rate)
 
 
