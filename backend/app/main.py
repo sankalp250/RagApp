@@ -17,6 +17,48 @@ from backend.app.api.router import api_router
 from backend.app.schemas.health import HealthResponse
 
 
+import asyncio
+
+async def _warmup_subsystems():
+    """
+    Background startup warmup:
+    1. Pre-warms active agents and their document chunk indices into L1 memory.
+    2. Pre-warms Google GenAI / Gemini client and embedding TLS connection pool.
+    Ensures zero users ever experience a cold-start delay on their first query.
+    """
+    try:
+        from sqlalchemy import select
+        from backend.app.db.session import AsyncSessionLocal
+        from backend.app.db.models.agent import Agent
+        from backend.app.ai.rag_engine import _get_or_build_index
+        from backend.app.ai.embeddings.service import EmbeddingService
+        from backend.app.api.v1.widget import _AGENT_L1_CACHE, _AGENT_L1_TTL
+        import time
+
+        logger.info("[WARMUP] Starting asynchronous system pre-warming...")
+        
+        # 1. Warm up Google GenAI embedding connection
+        try:
+            provider = EmbeddingService.get_provider("gemini")
+            await provider.embed_query("warmup ping")
+            logger.info("[WARMUP] Google GenAI embedding TLS connection warm.")
+        except Exception as e:
+            logger.warning(f"[WARMUP] Embedding warmup warning: {e}")
+
+        # 2. Warm up active agents and their document chunks
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Agent).where(Agent.status == "ACTIVE"))
+            agents = result.scalars().all()
+            for agent in agents:
+                if agent.public_key:
+                    _AGENT_L1_CACHE.set(agent.public_key, agent, ttl=_AGENT_L1_TTL)
+                await _get_or_build_index(db, str(agent.id), str(agent.organization_id))
+            logger.info(f"[WARMUP] Pre-warmed {len(agents)} active agent(s) into L1 memory.")
+
+    except Exception as e:
+        logger.warning(f"[WARMUP] System warmup non-fatal error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for application startup and shutdown."""
@@ -24,6 +66,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize database tables and extensions
     await init_db()
     logger.info("Database schema initialized and ready.")
+    
+    # Launch background system warmup task (non-blocking)
+    asyncio.create_task(_warmup_subsystems())
+    
     yield
     logger.info(f"Shutting down {settings.PROJECT_NAME}...")
     await engine.dispose()

@@ -15,11 +15,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     ALGORITHM: str = "HS256"
 
-    # Database
+    # Database (PostgreSQL / Supabase)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/rag_intelligence"
     DATABASE_SYNC_URL: str = "postgresql://postgres:postgres@localhost:5432/rag_intelligence"
-    SQLITE_DB_PATH: str = "backend/storage/local_rag.db"
-    USE_SQLITE_FALLBACK: bool = True
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""

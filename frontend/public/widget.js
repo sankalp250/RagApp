@@ -558,7 +558,7 @@
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     msgDiv.innerHTML = `
-      <div class="rag-bubble">${escapeHtml(text)}</div>
+      <div class="rag-bubble">${renderMarkdown(text)}</div>
       <span class="rag-msg-time">${timeStr}</span>
     `;
 
@@ -656,7 +656,7 @@
                   localStorage.setItem(STORAGE_KEY_CONV, conversationId);
                 } else if (data.event === 'token' && data.token) {
                   fullText += data.token;
-                  bubbleDiv.innerHTML = escapeHtml(fullText);
+                  bubbleDiv.innerHTML = renderMarkdown(fullText);
                   messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 } else if (data.event === 'done') {
                   messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -698,12 +698,34 @@
     handleSend(text);
   };
 
-  function escapeHtml(str) {
-    return str
+  function renderMarkdown(str) {
+    if (!str) return '';
+    // 1. Escape HTML special characters
+    let out = str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br/>');
+      .replace(/>/g, '&gt;');
+
+    // 2. Bold: **text** or __text__
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+    // 3. Italic: *text* or _text_
+    out = out.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    out = out.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+
+    // 4. Inline code: `code`
+    out = out.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.15);padding:2px 5px;border-radius:4px;font-family:monospace;font-size:0.9em;">$1</code>');
+
+    // 5. Unordered / Ordered lists with numbers
+    out = out.replace(/^(\d+)\.\s+(.+)$/gm, '<div style="margin:4px 0 4px 10px;display:flex;gap:6px;"><span style="font-weight:600;opacity:0.9;">$1.</span><span>$2</span></div>');
+    out = out.replace(/^[-*•]\s+(.+)$/gm, '<div style="margin:4px 0 4px 10px;display:flex;gap:6px;"><span style="opacity:0.9;">•</span><span>$1</span></div>');
+
+    // 6. Line breaks and paragraphs
+    out = out.replace(/\n\n+/g, '<div style="height:8px;"></div>');
+    out = out.replace(/\n/g, '<br/>');
+
+    return out;
   }
 
   // Auto-fetch remote configuration if available

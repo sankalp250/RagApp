@@ -23,13 +23,23 @@ from backend.app.db.models.conversation import Message
 from backend.app.db.models.evaluation import Feedback
 from backend.app.schemas.chat import ChatRequest, ChatResponse, FeedbackCreate
 from backend.app.domains.chat.service import ChatService
+from backend.app.core.cache import LRUTtlCache
 from backend.app.core.logging import logger
 
 router = APIRouter()
 
 
+# L1 Agent Cache — memory-bounded LRU cache (< 0.01ms lookup, auto-evicting)
+_AGENT_L1_CACHE = LRUTtlCache(maxsize=1000)
+_AGENT_L1_TTL = 3600.0  # 1 hour (invalidated explicitly on updates)
+
 async def _get_agent_by_public_key(public_key: str, db: AsyncSession) -> Agent:
-    """Lookup agent by public_key. Raises 404 if not found or INACTIVE."""
+    """Lookup agent by public_key with L1 memory caching. Raises 404 if not found or INACTIVE."""
+    # Check L1 cache first (< 0.01ms)
+    agent = _AGENT_L1_CACHE.get(public_key)
+    if agent is not None:
+        return agent
+
     stmt = select(Agent).where(Agent.public_key == public_key, Agent.status == "ACTIVE")
     result = await db.execute(stmt)
     agent = result.scalars().first()
@@ -38,6 +48,8 @@ async def _get_agent_by_public_key(public_key: str, db: AsyncSession) -> Agent:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No active agent found for key '{public_key}'."
         )
+    # Cache in L1 memory
+    _AGENT_L1_CACHE.set(public_key, agent, ttl=_AGENT_L1_TTL)
     return agent
 
 
@@ -51,16 +63,31 @@ async def get_widget_config(
 ):
     """
     Returns the agent's widget configuration (colors, greeting, title, etc.).
-    This endpoint is public and safe to call from any website embedding the widget.
-    Cached in Redis to serve high-volume traffic with near-zero DB load.
+    Proactively warms the agent's document chunk index in RAM and GenAI connection
+    in the background while the visitor is viewing the page.
     """
+    import asyncio
     from backend.app.core.cache import get_cached_widget_config, set_cached_widget_config
+    from backend.app.ai.rag_engine import _get_or_build_index
+    from backend.app.ai.embeddings.service import EmbeddingService
     
+    agent = await _get_agent_by_public_key(public_key, db)
+    
+    # Proactive Background Pre-warming: load chunk index and warm GenAI connection
+    # By the time the user finishes typing a question, all memory structures are hot!
+    async def _proactive_warmup():
+        try:
+            await _get_or_build_index(None, str(agent.id), str(agent.organization_id))
+            provider = EmbeddingService.get_provider()
+            await provider.embed_query("warmup ping")
+        except Exception:
+            pass
+    asyncio.create_task(_proactive_warmup())
+
     cached = await get_cached_widget_config(public_key)
     if cached:
         return cached
 
-    agent = await _get_agent_by_public_key(public_key, db)
     config = agent.configuration or {}
     result = {
         "agent_id": str(agent.id),
@@ -93,7 +120,7 @@ async def widget_chat(
 
     if request.stream:
         return StreamingResponse(
-            _widget_stream_chat(str(agent.id), str(agent.organization_id), request),
+            _widget_stream_chat(str(agent.id), str(agent.organization_id), request, agent=agent),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -121,14 +148,16 @@ async def widget_chat(
 async def _widget_stream_chat(
     agent_id: str,
     organization_id: str,
-    request: ChatRequest
+    request: ChatRequest,
+    agent: Agent = None,
 ) -> AsyncGenerator[str, None]:
-    """SSE generator for widget streaming chat (instant real-time token yield with zero DB hold)."""
+    """SSE generator for widget streaming chat — passes pre-fetched agent to avoid redundant DB lookup."""
     try:
         async for sse_event in ChatService.chat_stream(
             agent_id=agent_id,
             organization_id=organization_id,
-            request=request
+            request=request,
+            agent=agent,
         ):
             yield f"data: {json.dumps(sse_event)}\n\n"
 

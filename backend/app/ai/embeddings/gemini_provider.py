@@ -38,19 +38,29 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         if not self.client:
             raise ValueError("Gemini API key is not configured.")
         
-        results = []
-        for text in texts:
-            # Check L1 query cache
+        async def _embed_single(text: str) -> List[float]:
             cached = get_cached_embedding(text)
             if cached:
-                results.append(cached)
-                continue
-            
-            # Non-blocking async execution
-            values = await asyncio.to_thread(self._sync_embed, text)
-            set_cached_embedding(text, values)
-            results.append(values)
-        return results
+                return cached
+            try:
+                response = await self.client.aio.models.embed_content(
+                    model=self.model,
+                    contents=text
+                )
+                if hasattr(response, "embeddings") and response.embeddings:
+                    vals = response.embeddings[0].values
+                elif hasattr(response, "embedding") and hasattr(response.embedding, "values"):
+                    vals = response.embedding.values
+                else:
+                    vals = getattr(response, "values", [])
+                set_cached_embedding(text, vals)
+                return vals
+            except Exception:
+                vals = await asyncio.to_thread(self._sync_embed, text)
+                set_cached_embedding(text, vals)
+                return vals
+
+        return await asyncio.gather(*[_embed_single(t) for t in texts])
 
     async def embed_query(self, query: str) -> List[float]:
         if not self.client:
@@ -61,7 +71,21 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         if cached:
             return cached
         
-        values = await asyncio.to_thread(self._sync_embed, query)
-        set_cached_embedding(query, values)
-        return values
+        try:
+            response = await self.client.aio.models.embed_content(
+                model=self.model,
+                contents=query
+            )
+            if hasattr(response, "embeddings") and response.embeddings:
+                values = response.embeddings[0].values
+            elif hasattr(response, "embedding") and hasattr(response.embedding, "values"):
+                values = response.embedding.values
+            else:
+                values = getattr(response, "values", [])
+            set_cached_embedding(query, values)
+            return values
+        except Exception:
+            values = await asyncio.to_thread(self._sync_embed, query)
+            set_cached_embedding(query, values)
+            return values
 

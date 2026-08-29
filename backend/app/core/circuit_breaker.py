@@ -75,6 +75,29 @@ class CircuitBreaker:
             await self._on_failure()
             raise
 
+    async def call_stream(self, stream_fn: Callable, *args, **kwargs):
+        """Executes an async generator through the circuit breaker with failure tracking."""
+        async with self._lock:
+            now = time.monotonic()
+            if self.state == CircuitState.OPEN:
+                if now - self.last_failure_time > self.recovery_timeout:
+                    self.state = CircuitState.HALF_OPEN
+                    logger.info(f"CircuitBreaker [{self.name}] entering HALF_OPEN state (canary trial).")
+                else:
+                    raise CircuitBreakerOpenException(
+                        f"CircuitBreaker [{self.name}] is OPEN. Fast-failing stream."
+                    )
+
+        try:
+            gen = stream_fn(*args, **kwargs)
+            async for item in gen:
+                yield item
+            await self._on_success()
+        except Exception as e:
+            logger.error(f"CircuitBreaker [{self.name}] stream execution error: {e}")
+            await self._on_failure()
+            raise
+
     async def _on_success(self):
         async with self._lock:
             if self.state == CircuitState.HALF_OPEN:

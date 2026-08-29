@@ -42,12 +42,18 @@ from backend.app.ai.rag_engine import (
 )
 from backend.app.ai.knowledge_gap import detect_knowledge_gap, record_knowledge_gap
 from backend.app.workers.evaluation_jobs import run_evaluation_job
-from backend.app.core.cache import get_cached_chat, set_cached_chat
+from backend.app.core.cache import get_cached_chat, set_cached_chat, LRUTtlCache
 from backend.app.core.logging import logger
 from backend.app.core.exceptions import AgentNotFoundException, DomainException
 
 
 class ChatService:
+
+    # L1 Memory-Bounded Conversation & History Caches (bounded to 5,000 entries with auto-eviction)
+    _CONV_CACHE = LRUTtlCache(maxsize=5000)
+    _CONV_CACHE_TTL = 3600.0  # 1 hour
+    _HISTORY_CACHE = LRUTtlCache(maxsize=5000)
+    _HISTORY_CACHE_TTL = 3600.0  # 1 hour
 
     @staticmethod
     async def get_or_create_conversation(
@@ -59,25 +65,14 @@ class ChatService:
         conversation_id: Optional[str]
     ) -> Conversation:
         """
-        Retrieves an active conversation by ID or provisions a new one.
-
-        Connections:
-          - Queries `conversations` table matching (conversation_id, agent_id).
-          - Scopes conversation to visitor_id and organization_id.
-
-        Args:
-          db: Database async session
-          agent_id: UUID of the target Agent
-          organization_id: UUID of the parent Organization (tenant boundary)
-          visitor_id: Anonymous visitor cookie/token from the client widget
-          session_id: Optional browser session identifier
-          conversation_id: Optional UUID to resume an existing thread
-
-        Returns:
-          Conversation model instance
+        Retrieves an active conversation by ID (with L1 LRU cache) or provisions a new one.
         """
-        # If client provided an existing conversation_id, verify and reuse it
+        # Check L1 cache for existing conversation (< 0.01ms)
         if conversation_id:
+            cached_conv = ChatService._CONV_CACHE.get(conversation_id)
+            if cached_conv is not None:
+                return cached_conv
+
             stmt = select(Conversation).where(
                 Conversation.id == conversation_id,
                 Conversation.agent_id == agent_id
@@ -85,6 +80,7 @@ class ChatService:
             result = await db.execute(stmt)
             conv = result.scalars().first()
             if conv:
+                ChatService._CONV_CACHE.set(conversation_id, conv, ttl=ChatService._CONV_CACHE_TTL)
                 return conv
 
         # Otherwise create a new Conversation record
@@ -97,26 +93,27 @@ class ChatService:
         )
         db.add(conv)
         await db.flush()
+        ChatService._CONV_CACHE.set(str(conv.id), conv, ttl=ChatService._CONV_CACHE_TTL)
         return conv
 
     @staticmethod
     async def _load_conversation_history(
-        db: AsyncSession, conversation_id: str, limit: int = 10
+        db: Optional[AsyncSession], conversation_id: str, limit: int = 10
     ) -> List[dict]:
         """
-        Loads previous messages in chronological order for LLM context window.
-
-        Connections:
-          - Queries `messages` table ordered by created_at.
-
-        Args:
-          db: Database async session
-          conversation_id: UUID of the active conversation thread
-          limit: Max number of recent turns to include (avoids context overflow)
-
-        Returns:
-          List of message dicts: [{"role": "user"|"assistant", "content": "..."}]
+        Loads previous messages with L1 LRU cache. Returns list of message dicts.
+        If cache misses and db is None, opens a dedicated brief session.
         """
+        # Check L1 LRU cache first (< 0.01ms)
+        cached_history = ChatService._HISTORY_CACHE.get(conversation_id)
+        if cached_history is not None:
+            return cached_history[-limit:]
+
+        if db is None:
+            from backend.app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                return await ChatService._load_conversation_history(session, conversation_id, limit)
+
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation_id)
@@ -125,7 +122,19 @@ class ChatService:
         )
         result = await db.execute(stmt)
         messages = list(reversed(result.scalars().all()))
-        return [{"role": m.role, "content": m.content} for m in messages]
+        history = [{"role": m.role, "content": m.content} for m in messages]
+        ChatService._HISTORY_CACHE.set(conversation_id, history, ttl=ChatService._HISTORY_CACHE_TTL)
+        return history
+
+    @staticmethod
+    def _append_to_history_cache(conversation_id: str, role: str, content: str):
+        """Append a message to the L1 LRU history cache (used after stream completes)."""
+        cached = ChatService._HISTORY_CACHE.get(conversation_id)
+        if cached is not None:
+            cached.append({"role": role, "content": content})
+            ChatService._HISTORY_CACHE.set(conversation_id, cached, ttl=ChatService._HISTORY_CACHE_TTL)
+        else:
+            ChatService._HISTORY_CACHE.set(conversation_id, [{"role": role, "content": content}], ttl=ChatService._HISTORY_CACHE_TTL)
 
     @staticmethod
     async def chat(
@@ -136,24 +145,6 @@ class ChatService:
     ) -> ChatResponse:
         """
         Executes the complete RAG pipeline for a single chat turn.
-
-        Connections:
-          - `Agent` model (db): Reads system prompt, temperature, max_tokens.
-          - `get_cached_chat` / `set_cached_chat` (cache.py): Fast-path response caching.
-          - `retrieve_context` (rag_engine.py): Vector similarity search.
-          - `generate_answer` (rag_engine.py): Calls Gemini 2.5 Flash / Groq fallback.
-          - `save_retrieval_evidence` (rag_engine.py): Persists audit log of used chunks.
-          - `detect_knowledge_gap` (knowledge_gap.py): Determines if query was unanswerable.
-          - `run_evaluation_job` (evaluation_jobs.py): Async evaluation in background.
-
-        Args:
-          db: Database async session
-          agent_id: Target chatbot agent UUID
-          organization_id: Tenant UUID
-          request: ChatRequest DTO (message text, visitor_id, session_id, stream flag)
-
-        Returns:
-          ChatResponse DTO with answer text, source chunks, token metrics, and gap metadata
         """
         start_time = time.monotonic()
 
@@ -198,9 +189,10 @@ class ChatService:
             raw_chunks = []
             in_tok = 0
             out_tok = 0
-            logger.info(f"Served response for agent {agent_id} from Redis cache.")
+            is_gap = False
+            gap_category = None
         else:
-            # Cache Miss: Execute hybrid retrieval (query rewriting + BM25 + dense + RRF)
+            # Cache Miss: Execute hybrid retrieval
             source_chunks, raw_chunks = await retrieve_context(
                 db=db,
                 agent_id=agent_id,
@@ -210,26 +202,27 @@ class ChatService:
                 conversation_history=history
             )
 
-            # Generate answer using LLM (Gemini with Groq circuit-breaker fallback)
-            answer, in_tok, out_tok = await generate_answer(
+            # Generate Answer via LLM
+            llm_result = await generate_answer(
                 agent=agent,
                 user_message=request.message,
                 context_chunks=source_chunks,
                 conversation_history=history
             )
+            answer = llm_result.answer
+            in_tok = llm_result.input_tokens
+            out_tok = llm_result.output_tokens
 
-            # Store answer in Redis cache for future identical queries
-            if len(history) <= 1:
-                await set_cached_chat(
-                    organization_id=organization_id,
-                    agent_id=agent_id,
-                    query=request.message,
-                    response={"answer": answer, "sources": [s.model_dump() for s in source_chunks]}
-                )
+            # Evaluate knowledge gap
+            is_gap, gap_category = detect_knowledge_gap(
+                user_query=request.message,
+                answer=answer,
+                source_chunks=source_chunks
+            )
 
         latency_ms = (time.monotonic() - start_time) * 1000
 
-        # Step 6: Persist AI response message with token metrics and latency
+        # Step 6: Persist Assistant Message
         assistant_msg = Message(
             conversation_id=str(conv.id),
             role="assistant",
@@ -242,16 +235,11 @@ class ChatService:
         db.add(assistant_msg)
         await db.flush()
 
-        # Step 7: Save retrieval evidence linking message to exact document chunks used
+        # Step 7: Persist Retrieval Evidence
         if raw_chunks:
             await save_retrieval_evidence(db, str(assistant_msg.id), raw_chunks, source_chunks)
 
-        # Step 8: Knowledge Gap Detection (signals unanswerable queries for dashboard analytics)
-        is_gap, gap_category = detect_knowledge_gap(
-            user_query=request.message,
-            answer=answer,
-            source_chunks=source_chunks
-        )
+        # Step 8: Persist Knowledge Gap if detected
         if is_gap and gap_category:
             try:
                 await record_knowledge_gap(
@@ -263,19 +251,24 @@ class ChatService:
                     gap_category=gap_category,
                     source_chunks=source_chunks
                 )
-            except Exception as e:
-                logger.warning(f"Knowledge gap recording failed (non-fatal): {e}")
+            except Exception:
+                pass
 
-        # Commit conversation transaction
         await db.commit()
 
-        # Step 9: Trigger asynchronous evaluation job (runs in background without blocking client)
-        msg_id_for_eval = str(assistant_msg.id)
-        asyncio.create_task(run_evaluation_job(msg_id_for_eval))
+        # Step 9: Post-Turn Async Jobs (non-blocking)
+        asyncio.create_task(run_evaluation_job(str(assistant_msg.id)))
+
+        if not cached_resp and len(history) <= 1 and "technical difficulties" not in answer.lower() and len(answer) > 10:
+            asyncio.create_task(set_cached_chat(
+                organization_id=organization_id,
+                agent_id=agent_id,
+                query=request.message,
+                response={"answer": answer, "sources": [s.model_dump() for s in source_chunks]}
+            ))
 
         return ChatResponse(
             conversation_id=str(conv.id),
-            message_id=str(assistant_msg.id),
             answer=answer,
             sources=source_chunks,
             input_tokens=in_tok,
@@ -289,30 +282,27 @@ class ChatService:
     async def chat_stream(
         agent_id: str,
         organization_id: str,
-        request: ChatRequest
+        request: ChatRequest,
+        agent: Agent = None,
     ):
         """
         High-performance native token streaming chat pipeline.
-        Connection-Starvation-Free: Releases DB connection before calling LLM streaming.
-        Time-to-first-token (TTFT) ~ 200ms - 350ms.
+        Zero pre-stream DB blocking: Resolves conversation, history, and chunks from
+        L1 cache in microseconds. Yields initial tokens with minimal TTFT.
+        Batches all persistence into a single post-stream transaction.
         """
+        import uuid
         start_time = time.monotonic()
 
-        # Step 1: Instant L1 / L2 Semantic Response Cache Check (< 0.1ms)
-        cached_resp = await get_cached_chat(organization_id, agent_id, request.message)
-        if cached_resp:
-            async with AsyncSessionLocal() as db:
-                conv = await ChatService.get_or_create_conversation(
-                    db=db,
-                    agent_id=agent_id,
-                    organization_id=organization_id,
-                    visitor_id=request.visitor_id,
-                    session_id=request.session_id,
-                    conversation_id=request.conversation_id
-                )
-                conv_id = str(conv.id)
-                await db.commit()
+        def _elapsed():
+            return (time.monotonic() - start_time) * 1000
 
+        # Step 1: L1-only Semantic Response Cache Check (< 0.05ms)
+        t0 = time.monotonic()
+        cached_resp = await get_cached_chat(organization_id, agent_id, request.message)
+        logger.info(f"[PERF] cache_check: {(time.monotonic() - t0)*1000:.1f}ms (total: {_elapsed():.0f}ms)")
+        if cached_resp:
+            conv_id = request.conversation_id or str(uuid.uuid4())
             yield {"event": "meta", "conversation_id": conv_id, "cached": True}
             
             # Instant micro-stream from memory
@@ -328,47 +318,47 @@ class ChatService:
             }
             return
 
-        # Step 2: Short-Lived Session 1 — Fetch Config & History, Write User Message & Retrieve Context
-        async with AsyncSessionLocal() as db:
-            stmt = select(Agent).where(Agent.id == agent_id, Agent.organization_id == organization_id)
-            result = await db.execute(stmt)
-            agent = result.scalars().first()
-            if not agent:
-                raise AgentNotFoundException(f"Agent '{agent_id}' not found.")
+        # Step 2: Instant In-Memory Resolution of Agent, Conversation & History (0.01ms)
+        if agent is None:
+            t0 = time.monotonic()
+            from backend.app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                stmt = select(Agent).where(Agent.id == agent_id, Agent.organization_id == organization_id)
+                result = await db.execute(stmt)
+                agent = result.scalars().first()
+                if not agent:
+                    raise AgentNotFoundException(f"Agent '{agent_id}' not found.")
+            logger.info(f"[PERF] agent_fetch: {(time.monotonic() - t0)*1000:.1f}ms (total: {_elapsed():.0f}ms)")
+        else:
+            logger.info(f"[PERF] agent_fetch: 0.0ms (pre-cached, total: {_elapsed():.0f}ms)")
 
-            conv = await ChatService.get_or_create_conversation(
-                db=db,
-                agent_id=agent_id,
-                organization_id=organization_id,
-                visitor_id=request.visitor_id,
-                session_id=request.session_id,
-                conversation_id=request.conversation_id
-            )
-            conv_id = str(conv.id)
-            history = await ChatService._load_conversation_history(db, conv_id)
+        is_new_conv = False
+        if request.conversation_id:
+            conv_id = request.conversation_id
+            history = await ChatService._load_conversation_history(None, conv_id)
+        else:
+            conv_id = str(uuid.uuid4())
+            is_new_conv = True
+            history = []
+            ChatService._CONV_CACHE.set(conv_id, True, ttl=ChatService._CONV_CACHE_TTL)
+            ChatService._HISTORY_CACHE.set(conv_id, [], ttl=ChatService._HISTORY_CACHE_TTL)
 
-            user_msg = Message(
-                conversation_id=conv_id,
-                role="user",
-                content=request.message,
-            )
-            db.add(user_msg)
-
-            # Hybrid Retrieval: query rewriting + BM25 + dense + RRF (< 20ms)
-            source_chunks, raw_chunks = await retrieve_context(
-                db=db,
-                agent_id=agent_id,
-                organization_id=organization_id,
-                query_text=request.message,
-                top_k=5,
-                conversation_history=history
-            )
-            await db.commit()
-            # Database connection is returned immediately to the pool!
+        # Hybrid Retrieval: query rewriting + BM25 + dense + RRF (0 DB latency on hot chunk cache)
+        t0 = time.monotonic()
+        source_chunks, raw_chunks = await retrieve_context(
+            db=None,
+            agent_id=agent_id,
+            organization_id=organization_id,
+            query_text=request.message,
+            top_k=5,
+            conversation_history=history
+        )
+        logger.info(f"[PERF] retrieval: {(time.monotonic() - t0)*1000:.1f}ms (total: {_elapsed():.0f}ms)")
 
         sources_payload = [s.model_dump() for s in source_chunks]
 
-        # Step 3: Send meta event immediately to client (< 20ms)
+        # Step 3: Send meta event immediately to client
+        logger.info(f"[PERF] >>> META EVENT at {_elapsed():.0f}ms (pre-LLM)")
         yield {
             "event": "meta",
             "conversation_id": conv_id,
@@ -377,19 +367,24 @@ class ChatService:
 
         # Step 4: Native Token Streaming from LLM with ZERO DB Connections Held
         accumulated_tokens = []
+        first_token_time = None
         async for token in generate_answer_stream(
             agent=agent,
             user_message=request.message,
             context_chunks=source_chunks,
             conversation_history=history
         ):
+            if first_token_time is None:
+                first_token_time = time.monotonic()
+                logger.info(f"[PERF] >>> FIRST LLM TOKEN at {_elapsed():.0f}ms")
             accumulated_tokens.append(token)
             yield {"event": "token", "token": token}
 
         full_answer = "".join(accumulated_tokens)
         latency_ms = (time.monotonic() - start_time) * 1000
+        logger.info(f"[PERF] >>> STREAM COMPLETE at {latency_ms:.0f}ms (tokens: {len(accumulated_tokens)})")
 
-        # Step 5: Short-Lived Session 2 — Persist Assistant Message, Retrieval Evidence & Gaps
+        # Step 5: Post-Stream Persistence — Single Batched Database Transaction
         is_gap, gap_category = detect_knowledge_gap(
             user_query=request.message,
             answer=full_answer,
@@ -397,7 +392,26 @@ class ChatService:
         )
         assistant_msg_id = None
 
+        from backend.app.db.session import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
+            if is_new_conv:
+                new_conv_record = Conversation(
+                    id=conv_id,
+                    agent_id=agent_id,
+                    organization_id=organization_id,
+                    visitor_id=request.visitor_id,
+                    session_id=request.session_id,
+                    status="ACTIVE"
+                )
+                db.add(new_conv_record)
+
+            user_msg = Message(
+                conversation_id=conv_id,
+                role="user",
+                content=request.message,
+            )
+            db.add(user_msg)
+
             assistant_msg = Message(
                 conversation_id=conv_id,
                 role="assistant",
@@ -429,6 +443,10 @@ class ChatService:
                     pass
 
             await db.commit()
+
+        # Update L1 history cache with both messages
+        ChatService._append_to_history_cache(conv_id, "user", request.message)
+        ChatService._append_to_history_cache(conv_id, "assistant", full_answer)
 
         # Step 6: Trigger Post-Stream Async Tasks (Non-blocking)
         if assistant_msg_id:

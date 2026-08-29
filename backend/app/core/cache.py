@@ -60,6 +60,28 @@ class LRUTtlCache:
             for k in keys_to_remove:
                 self._store.pop(k, None)
 
+    def pop(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            entry = self._store.pop(key, None)
+            if entry is None:
+                return default
+            exp, data = entry
+            if time.monotonic() < exp:
+                return data
+            return default
+
+    def __getitem__(self, key: str) -> Any:
+        val = self.get(key)
+        if val is None:
+            raise KeyError(key)
+        return val
+
+    def __setitem__(self, key: str, data: Any):
+        self.set(key, data, ttl=300.0)
+
+    def __contains__(self, key: str) -> bool:
+        return self.get(key) is not None
+
     def clear(self):
         with self._lock:
             self._store.clear()
@@ -148,7 +170,8 @@ def clear_all_caches():
 
 
 async def get_cached_chat(organization_id: str, agent_id: str, query: str) -> Optional[dict]:
-    """Return cached chat response from L1 (0.05ms) or Redis L2 (< 2ms)."""
+    """Return cached chat response from L1 (0.05ms) or Redis L2 (with 200ms timeout)."""
+    import asyncio as _asyncio
     key = _chat_cache_key(organization_id, agent_id, query)
     
     # Check L1 In-Memory Cache first (< 0.05ms)
@@ -157,17 +180,19 @@ async def get_cached_chat(organization_id: str, agent_id: str, query: str) -> Op
         logger.debug(f"L1 In-Memory Cache HIT: {key}")
         return l1_hit
 
-    # Check Redis L2 Cache
+    # Check Redis L2 Cache with strict 200ms timeout (prevents remote Redis from blocking hot path)
     redis = get_cache()
     if not redis:
         return None
     try:
-        data = await redis.get(key)
+        data = await _asyncio.wait_for(redis.get(key), timeout=0.2)
         if data:
             parsed = json.loads(data)
             _L1_CHAT_CACHE.set(key, parsed, ttl=CHAT_CACHE_TTL)
             logger.debug(f"L2 Redis Cache HIT: {key}")
             return parsed
+    except _asyncio.TimeoutError:
+        logger.debug(f"Redis L2 lookup timed out (200ms), skipping: {key}")
     except Exception as e:
         logger.warning(f"Cache read error (non-fatal): {e}")
     return None

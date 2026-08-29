@@ -58,7 +58,7 @@ export default function DashboardLayout({
       }
     }
     loadMetrics();
-  }, [pathname]);
+  }, []);
 
   // Derived user display info
   const displayName = user?.full_name || user?.email?.split("@")[0] || "Studio User";
