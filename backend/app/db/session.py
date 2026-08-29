@@ -19,7 +19,7 @@ if settings.USE_SQLITE_FALLBACK and not os.getenv("FORCE_POSTGRES"):
         echo=False,
         future=True,
         pool_pre_ping=True,
-        connect_args={"check_same_thread": False}
+        connect_args={"check_same_thread": False, "timeout": 60.0}
     )
 else:
     engine = create_async_engine(
@@ -63,7 +63,15 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """Initialize database tables and extensions."""
     async with engine.begin() as conn:
-        if "postgresql" in str(engine.url):
+        if "sqlite" in str(engine.url):
+            try:
+                await conn.execute(text("PRAGMA journal_mode=WAL;"))
+                await conn.execute(text("PRAGMA busy_timeout=60000;"))
+                await conn.execute(text("PRAGMA synchronous=NORMAL;"))
+                logger.info("SQLite WAL mode and busy_timeout enabled.")
+            except Exception as e:
+                logger.warning(f"Could not enable SQLite WAL mode: {e}")
+        elif "postgresql" in str(engine.url):
             try:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
                 logger.info("pgvector extension enabled.")
@@ -71,6 +79,41 @@ async def init_db() -> None:
                 logger.warning(f"Could not initialize pgvector extension: {e}")
 
         # Create all tables defined in models
-        from backend.app.db.models import user, organization, agent, document, conversation, evaluation, knowledge_gap
+        from backend.app.db.models import user, organization, agent, document, conversation, evaluation, knowledge_gap, crawler
         await conn.run_sync(Base.metadata.create_all)
+
+        # Lightweight schema migrations for existing databases
+        columns_to_add = [
+            ("documents", "knowledge_source_id", "VARCHAR(36)"),
+            ("documents", "source_page_id", "VARCHAR(36)"),
+            ("documents", "title", "VARCHAR(500)"),
+            ("documents", "source_url", "VARCHAR(1000)"),
+            ("documents", "canonical_url", "VARCHAR(1000)"),
+            ("documents", "content", "TEXT"),
+            ("documents", "content_hash", "VARCHAR(64)"),
+            ("documents", "previous_hash", "VARCHAR(64)"),
+            ("documents", "version", "INTEGER DEFAULT 1"),
+            ("documents", "is_active", "BOOLEAN DEFAULT 1"),
+            ("document_chunks", "content_hash", "VARCHAR(64)"),
+            ("knowledge_sources", "current_version", "INTEGER DEFAULT 1"),
+            ("crawl_jobs", "pages_unchanged", "INTEGER DEFAULT 0"),
+            ("crawl_jobs", "pages_changed", "INTEGER DEFAULT 0"),
+            ("crawl_jobs", "pages_new", "INTEGER DEFAULT 0"),
+            ("crawl_jobs", "pages_removed", "INTEGER DEFAULT 0"),
+            ("crawl_jobs", "crawl_version", "INTEGER DEFAULT 1"),
+            ("crawl_runs", "pages_unchanged", "INTEGER DEFAULT 0"),
+            ("crawl_runs", "pages_changed", "INTEGER DEFAULT 0"),
+            ("crawl_runs", "pages_new", "INTEGER DEFAULT 0"),
+            ("crawl_runs", "pages_removed", "INTEGER DEFAULT 0"),
+            ("crawled_pages", "previous_hash", "VARCHAR(64)"),
+            ("crawled_pages", "change_status", "VARCHAR(50) DEFAULT 'NEW'"),
+            ("crawled_pages", "crawl_version", "INTEGER DEFAULT 1"),
+            ("crawled_pages", "is_active", "BOOLEAN DEFAULT 1"),
+        ]
+        for tbl, col, col_type in columns_to_add:
+            try:
+                await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type};"))
+            except Exception:
+                pass  # Column already exists
+
         logger.info("Database schema initialized.")

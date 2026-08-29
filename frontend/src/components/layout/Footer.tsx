@@ -133,32 +133,32 @@ export function Footer() {
           {/* Column 3: Resources & Trust */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-4">
-              Security & Trust
+              Account & Studio
             </h4>
             <ul className="space-y-2.5 text-sm text-slate-600">
               <li>
-                <a href="#security" className="hover:text-indigo-600 transition-colors">
-                  SOC-2 Compliance
-                </a>
+                <Link href="/login" className="hover:text-indigo-600 font-semibold text-slate-800 transition-colors">
+                  Studio Sign In →
+                </Link>
+              </li>
+              <li>
+                <Link href="/register" className="hover:text-indigo-600 font-semibold text-indigo-600 transition-colors">
+                  Start Free Trial
+                </Link>
+              </li>
+              <li>
+                <Link href="/dashboard" className="hover:text-indigo-600 transition-colors">
+                  Studio Dashboard
+                </Link>
               </li>
               <li>
                 <a href="#security" className="hover:text-indigo-600 transition-colors">
-                  Data Isolation
+                  Data Isolation & Trust
                 </a>
               </li>
               <li>
                 <a href="#faq" className="hover:text-indigo-600 transition-colors">
-                  Documentation & FAQ
-                </a>
-              </li>
-              <li>
-                <a href="#security" className="hover:text-indigo-600 transition-colors">
-                  API Status
-                </a>
-              </li>
-              <li>
-                <a href="#security" className="hover:text-indigo-600 transition-colors">
-                  Privacy Policy
+                  FAQ & Documentation
                 </a>
               </li>
             </ul>

@@ -39,7 +39,15 @@ class SourceChunk(BaseModel):
     content: str
     similarity_score: float
     rank: int
+    # File document fields (legacy)
     document_filename: Optional[str] = None
+    # Website / rich attribution fields
+    document_id: Optional[str] = None
+    source_url: Optional[str] = None
+    title: Optional[str] = None
+    knowledge_source_id: Optional[str] = None
+    crawl_id: Optional[str] = None
+    source_type: Optional[str] = None  # "website" | "file"
 
 
 class ChatResponse(BaseModel):

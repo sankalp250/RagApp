@@ -12,6 +12,15 @@ Performance upgrades in this version:
   - Chunks are committed to the database in a single bulk flush rather than
     one insert per chunk, cutting DB round-trips from N to 1.
 
+Website Document Support:
+  - For website docs (source_type=="website" or storage_path starts with "web/"),
+    text is read from doc.content (Markdown stored in PostgreSQL by the crawler),
+    avoiding a storage round-trip for virtual web/ paths.
+  - Stale chunks from a previous crawl version are purged before reinserting.
+  - Every chunk receives full metadata: organization_id, agent_id, knowledge_source_id,
+    document_id, source_url, canonical_url, title, crawl_id, crawl_version, source_type,
+    chunk_index, char_count, filename.
+
 Module Connections:
   - backend.app.domains.documents.storage -> Reads uploaded raw files from storage backend
   - backend.app.ai.chunking.extractors    -> Extracts text from PDF, DOCX, TXT, CSV, MD
@@ -25,7 +34,7 @@ Lifecycle:
 import asyncio
 from typing import List, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from backend.app.db.session import AsyncSessionLocal
 from backend.app.db.models.document import Document, DocumentChunk
 from backend.app.domains.documents.storage import get_storage_backend
@@ -39,6 +48,19 @@ from backend.app.core.logging import logger
 # Number of chunks to embed concurrently per batch
 # Keeps API concurrency manageable and avoids rate-limit bursts
 EMBEDDING_BATCH_SIZE = 16
+
+
+def _chunk_plain_text(
+    text: str,
+    chunk_size: int = 600,
+    chunk_overlap: int = 80,
+) -> List[str]:
+    """Split raw text (markdown or plain) into overlapping chunks."""
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = splitter.split_text(text)
+    if not chunks:
+        raise ValueError("Document yielded 0 chunks after splitting.")
+    return chunks
 
 
 def _extract_and_chunk(
@@ -61,11 +83,7 @@ def _extract_and_chunk(
     if not extracted_text.strip():
         raise ValueError("No extractable text found in document.")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    chunks_text = splitter.split_text(extracted_text)
-    if not chunks_text:
-        raise ValueError("Document yielded 0 chunks after splitting.")
-
+    chunks_text = _chunk_plain_text(extracted_text, chunk_size, chunk_overlap)
     return chunks_text, metadata
 
 
@@ -94,11 +112,13 @@ async def process_document_job(document_id: str) -> None:
     """
     Background worker job:
       1.  Load document record from DB
-      2.  Read raw file bytes from storage (async)
-      3.  Extract text + chunk in thread pool (non-blocking, CPU offloaded)
-      4.  Generate embeddings in concurrent batches (async, ~4x faster)
-      5.  Bulk-insert all DocumentChunk rows in a single flush
-      6.  Mark document READY and invalidate caches
+      2a. Website docs: read text from doc.content (in-DB markdown, no storage round-trip)
+      2b. File docs:    read raw file bytes from storage backend (async)
+      3.  Chunk text — offloaded to thread pool (non-blocking)
+      4.  Purge stale chunks from previous version (incremental re-crawl safety)
+      5.  Generate embeddings in concurrent batches (async, ~4x faster)
+      6.  Bulk-insert all DocumentChunk rows with rich metadata (single flush)
+      7.  Mark document READY and invalidate caches
 
     Args:
       document_id: UUID of the Document record to ingest
@@ -117,29 +137,71 @@ async def process_document_job(document_id: str) -> None:
             doc.status = "PROCESSING"
             await db.commit()
 
-            # Step 2: Read raw file bytes from storage (async I/O)
-            storage = get_storage_backend()
-            file_bytes = await storage.read_file(doc.storage_path)
-
-            # Step 3: Extract text and chunk — offloaded to thread pool (non-blocking)
-            chunks_text, metadata = await asyncio.to_thread(
-                _extract_and_chunk,
-                file_bytes,
-                doc.filename,
-                doc.mime_type or "text/plain",
+            # ------------------------------------------------------------------
+            # Step 2: Obtain document text
+            # ------------------------------------------------------------------
+            is_website_doc = (
+                (doc.doc_metadata or {}).get("source_type") == "website"
+                or (doc.storage_path or "").startswith("web/")
             )
-            logger.info(f"Extracted {len(chunks_text)} chunks from '{doc.filename}'")
 
-            # Step 4: Generate embeddings in concurrent batches (~4x faster than sequential)
+            if is_website_doc and doc.content:
+                # Website documents: content already stored in PostgreSQL as Markdown
+                # by the crawler — no storage backend round-trip needed.
+                logger.info(
+                    f"[website] Reading in-DB content for '{doc.filename}' "
+                    f"({len(doc.content)} chars)"
+                )
+                chunks_text = await asyncio.to_thread(_chunk_plain_text, doc.content)
+                metadata: dict = {
+                    "source": "website",
+                    "word_count": len(doc.content.split()),
+                    "char_count": len(doc.content),
+                }
+            else:
+                # Uploaded file documents: read raw bytes from storage backend
+                storage = get_storage_backend()
+                file_bytes = await storage.read_file(doc.storage_path)
+                chunks_text, metadata = await asyncio.to_thread(
+                    _extract_and_chunk,
+                    file_bytes,
+                    doc.filename,
+                    doc.mime_type or "text/plain",
+                )
+
+            logger.info(f"Chunked '{doc.filename}' into {len(chunks_text)} chunks")
+
+            # ------------------------------------------------------------------
+            # Step 4: Purge stale chunks from any previous version of this document.
+            # Critical for incremental re-crawls so stale embeddings don't persist.
+            # ------------------------------------------------------------------
+            await db.execute(
+                delete(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+            )
+            await db.flush()
+
+            # ------------------------------------------------------------------
+            # Step 5: Generate embeddings in concurrent batches (~4x faster)
+            # ------------------------------------------------------------------
             embedding_provider = EmbeddingService.get_provider()
             embeddings = await _embed_chunks_batched(embedding_provider, chunks_text)
 
             if len(embeddings) != len(chunks_text):
                 raise ValueError(
-                    f"Embedding count mismatch: {len(embeddings)} embeddings for {len(chunks_text)} chunks"
+                    f"Embedding count mismatch: {len(embeddings)} embeddings "
+                    f"for {len(chunks_text)} chunks"
                 )
 
-            # Step 5: Bulk-insert all DocumentChunk rows (single flush = 1 DB round-trip)
+            # ------------------------------------------------------------------
+            # Step 6: Bulk-insert all DocumentChunk rows with rich metadata.
+            # Metadata drives multi-tenant RAG filtering and source attribution:
+            #   organization_id, agent_id  -> strict tenant/agent isolation
+            #   knowledge_source_id        -> links chunk back to KnowledgeSource
+            #   document_id, source_url    -> source attribution in citations
+            #   title, crawl_id            -> UI-displayable provenance
+            #   source_type                -> differentiates web vs file chunks
+            # ------------------------------------------------------------------
+            doc_metadata = doc.doc_metadata or {}
             for idx, (chunk_text, emb) in enumerate(zip(chunks_text, embeddings)):
                 chunk = DocumentChunk(
                     document_id=doc.id,
@@ -149,17 +211,30 @@ async def process_document_job(document_id: str) -> None:
                     content=chunk_text,
                     embedding=emb,
                     chunk_metadata={
+                        # Tenant & agent identity (retrieval filtering)
+                        "organization_id": str(doc.organization_id),
+                        "agent_id": str(doc.agent_id),
+                        # Knowledge provenance (source attribution)
+                        "knowledge_source_id": str(doc.knowledge_source_id) if doc.knowledge_source_id else None,
+                        "document_id": str(doc.id),
+                        "source_url": doc.source_url,
+                        "canonical_url": doc.canonical_url,
+                        "title": doc.title or doc_metadata.get("title"),
+                        "crawl_id": doc_metadata.get("crawl_id"),
+                        "crawl_version": doc_metadata.get("crawl_version"),
+                        # Chunk-level details
+                        "source_type": doc_metadata.get("source_type", "file"),
                         "chunk_index": idx,
                         "char_count": len(chunk_text),
-                        "filename": doc.filename
+                        "filename": doc.filename,
                     }
                 )
                 db.add(chunk)
 
-            # Step 6: Finalize Document state as READY (single commit for all chunks)
+            # Step 7: Finalize Document state as READY (single commit for all chunks)
             doc.chunk_count = len(chunks_text)
             doc.status = "READY"
-            doc.doc_metadata = {**doc.doc_metadata, **metadata, "total_chunks": len(chunks_text)}
+            doc.doc_metadata = {**doc_metadata, **metadata, "total_chunks": len(chunks_text)}
             await db.commit()
 
             # Invalidate caches so new chunks are immediately searchable

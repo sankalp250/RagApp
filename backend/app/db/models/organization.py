@@ -21,6 +21,7 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     members = relationship("OrganizationMember", back_populates="organization", cascade="all, delete-orphan")
     agents = relationship("Agent", back_populates="organization", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="organization", cascade="all, delete-orphan")
+    knowledge_sources = relationship("KnowledgeSource", back_populates="organization", cascade="all, delete-orphan")
 
 
 class OrganizationMember(Base, UUIDPrimaryKeyMixin, TimestampMixin):

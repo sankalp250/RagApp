@@ -5,6 +5,7 @@ from backend.app.db.models.document import Document, DocumentChunk
 from backend.app.db.models.conversation import Conversation, Message, RetrievalEvidence
 from backend.app.db.models.evaluation import Evaluation, Feedback
 from backend.app.db.models.knowledge_gap import KnowledgeGap, GapEvidence
+from backend.app.db.models.crawler import KnowledgeSource, CrawlJob, CrawlRun, CrawledPage
 
 __all__ = [
     "User",
@@ -21,4 +22,8 @@ __all__ = [
     "Feedback",
     "KnowledgeGap",
     "GapEvidence",
+    "KnowledgeSource",
+    "CrawlJob",
+    "CrawlRun",
+    "CrawledPage",
 ]

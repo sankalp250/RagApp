@@ -269,6 +269,7 @@ class ChatService:
 
         return ChatResponse(
             conversation_id=str(conv.id),
+            message_id=str(assistant_msg.id),
             answer=answer,
             sources=source_chunks,
             input_tokens=in_tok,

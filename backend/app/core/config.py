@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "local"
     LOCAL_STORAGE_DIR: str = "backend/storage/uploads"
 
+    # Crawler
+    CRAWLER_MAX_CONCURRENT_REQUESTS: int = 5
+    CRAWLER_DEFAULT_DELAY_SECONDS: float = 1.0
+    CRAWLER_REQUEST_TIMEOUT_SECONDS: float = 20.0
+    CRAWLER_MAX_PAGES_DEFAULT: int = 50
+    CRAWLER_MAX_DEPTH_DEFAULT: int = 2
+    PLAYWRIGHT_ENABLED: bool = True
+
     # CORS
     CORS_ORIGINS: Union[str, List[str]] = [
         "http://localhost:3000",

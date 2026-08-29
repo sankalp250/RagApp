@@ -165,7 +165,10 @@ async def readiness_check():
 
 
 # Register API Router
+from backend.app.api.v1 import knowledge, widget
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(knowledge.router, prefix="/api/knowledge", tags=["Knowledge Crawler"], include_in_schema=False)
+app.include_router(widget.router, prefix="/api/widget", tags=["Widget"], include_in_schema=False)
 
 # Serve standalone widget script & demo page directly
 from fastapi.responses import FileResponse

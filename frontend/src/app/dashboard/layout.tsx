@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bot,
@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ExternalLink,
   LogOut,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
@@ -42,23 +43,50 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
 
+  // Authentication Route Protection
   useEffect(() => {
+    if (!loading && !user) {
+      const redirectTarget = pathname ? `/login?redirect=${encodeURIComponent(pathname)}` : "/login";
+      router.replace(redirectTarget);
+    }
+  }, [user, loading, router, pathname]);
+
+  useEffect(() => {
+    if (!user) return;
     async function loadMetrics() {
       try {
         const data = await api.get<OverviewMetrics>("/analytics/overview");
         setMetrics(data);
       } catch (err) {
-        // Fallback for offline/unauthenticated
+        // Fallback for fresh/offline state
       }
     }
     loadMetrics();
-  }, []);
+  }, [user]);
+
+  // Loading Screen while resolving session
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen bg-[#fcfdff] text-slate-900 flex items-center justify-center relative overflow-hidden font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-500/20 animate-pulse">
+            <Bot className="w-7 h-7" />
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+            <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+            <span>Verifying Studio Session...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Derived user display info
   const displayName = user?.full_name || user?.email?.split("@")[0] || "Studio User";

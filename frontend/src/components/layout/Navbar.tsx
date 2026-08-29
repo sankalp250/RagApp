@@ -20,6 +20,15 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const navLinks = [
+    { name: "Features", href: "#features" },
+    { name: "How it Works", href: "#how-it-works" },
+    { name: "Knowledge Gaps", href: "#knowledge-gaps" },
+    { name: "Integrations", href: "#integrations" },
+    { name: "Analytics", href: "#analytics" },
+    { name: user ? "Studio Dashboard" : "Studio", href: user ? "/dashboard" : "/login" },
+  ];
+
   useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 20);
@@ -54,7 +63,7 @@ export function Navbar() {
 
         {/* Desktop Navigation Links */}
         <nav className="hidden md:flex items-center gap-1 lg:gap-2">
-          {NAV_LINKS.map((link) => (
+          {navLinks.map((link) => (
             <Link
               key={link.name}
               href={link.href}
@@ -97,7 +106,7 @@ export function Navbar() {
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="md:hidden p-2 rounded-full text-slate-700 hover:bg-slate-100/80 transition-colors"
+          className="md:hidden p-2 rounded-full text-slate-700 hover:bg-slate-100/80 transition-colors cursor-pointer"
           aria-label="Toggle menu"
         >
           {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -115,7 +124,7 @@ export function Navbar() {
             className="md:hidden absolute top-20 left-4 right-4 bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-3xl p-6 shadow-2xl pointer-events-auto flex flex-col gap-4"
           >
             <div className="flex flex-col gap-2">
-              {NAV_LINKS.map((link) => (
+              {navLinks.map((link) => (
                 <Link
                   key={link.name}
                   href={link.href}
@@ -131,23 +140,24 @@ export function Navbar() {
                 <Link
                   href="/dashboard"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold text-center shadow-md"
+                  className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold text-center shadow-md flex items-center justify-center gap-2"
                 >
-                  Go to Studio Dashboard
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span>Go to Studio Dashboard</span>
                 </Link>
               ) : (
                 <>
                   <Link
                     href="/login"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="w-full py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-xs font-bold text-center hover:bg-slate-50 transition-colors"
+                    className="w-full py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-xs font-bold text-center hover:bg-slate-50 transition-colors block"
                   >
-                    Log in
+                    Log in to Studio
                   </Link>
                   <Link
                     href="/register"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold text-center shadow-md hover:opacity-90 transition-all"
+                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold text-center shadow-md hover:opacity-90 transition-all block"
                   >
                     Start Free Trial
                   </Link>

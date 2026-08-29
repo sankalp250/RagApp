@@ -296,3 +296,44 @@ async def ping_redis() -> bool:
     except Exception:
         return False
 
+
+# ─── Distributed Locking (Redis SET NX with In-Memory fallback) ─────────────
+_IN_MEMORY_LOCKS = LRUTtlCache(maxsize=5000)
+
+
+async def acquire_distributed_lock(lock_key: str, ttl_seconds: int = 60) -> bool:
+    """
+    Acquire a distributed lock with automatic TTL expiration.
+    Uses Redis SET key value NX EX ttl when available, falling back to an atomic in-memory lock.
+    Returns True if the lock was successfully acquired, False if already held.
+    """
+    redis = get_cache()
+    if redis:
+        try:
+            res = await redis.set(f"lock:{lock_key}", "1", nx=True, ex=ttl_seconds)
+            return bool(res)
+        except Exception as e:
+            logger.warning(f"Redis lock error (falling back to in-memory): {e}")
+
+    with _IN_MEMORY_LOCKS._lock:
+        now = time.monotonic()
+        entry = _IN_MEMORY_LOCKS._store.get(lock_key)
+        if entry is not None:
+            exp, _ = entry
+            if now < exp:
+                return False  # Lock already held by another request
+        _IN_MEMORY_LOCKS._store[lock_key] = (now + ttl_seconds, "1")
+        return True
+
+
+async def release_distributed_lock(lock_key: str) -> None:
+    """Release a distributed lock."""
+    redis = get_cache()
+    if redis:
+        try:
+            await redis.delete(f"lock:{lock_key}")
+        except Exception:
+            pass
+    _IN_MEMORY_LOCKS.delete(lock_key)
+
+

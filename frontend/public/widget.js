@@ -742,18 +742,41 @@
     return out;
   }
 
-  // Auto-fetch remote configuration if available
-  fetch(`${config.apiUrl}/api/v1/widget/${config.publicKey}/config`)
+  // Auto-bootstrap widget and signal origin for automatic initial crawl
+  const currentOrigin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
+  fetch(`${config.apiUrl}/api/v1/widget/bootstrap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      agent_id: config.agentId || config.publicKey,
+      public_key: config.publicKey,
+      origin: currentOrigin
+    })
+  })
     .then(r => r.ok ? r.json() : null)
-    .then(remoteCfg => {
-      if (remoteCfg) {
-        if (remoteCfg.bot_title) {
+    .then(bootstrapData => {
+      if (bootstrapData) {
+        if (bootstrapData.bot_title) {
           const titleEl = document.getElementById('ragBotTitle');
-          if (titleEl) titleEl.innerText = remoteCfg.bot_title;
+          if (titleEl) titleEl.innerText = bootstrapData.bot_title;
+        }
+        if (bootstrapData.knowledge_status === 'processing') {
+          console.log('[RAG Chatbot] Knowledge base is indexing in the background.');
         }
       }
     })
-    .catch(() => {});
+    .catch(() => {
+      // Fallback to static config fetch if bootstrap is unavailable
+      fetch(`${config.apiUrl}/api/v1/widget/${config.publicKey}/config`)
+        .then(r => r.ok ? r.json() : null)
+        .then(remoteCfg => {
+          if (remoteCfg && remoteCfg.bot_title) {
+            const titleEl = document.getElementById('ragBotTitle');
+            if (titleEl) titleEl.innerText = remoteCfg.bot_title;
+          }
+        })
+        .catch(() => {});
+    });
 
   console.log('[RAG Chatbot] Liquid Glass Widget loaded for public key:', config.publicKey);
 })();

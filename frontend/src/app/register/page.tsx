@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Bot, ArrowRight, Lock, Mail, Building, User, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams.get("redirect") || "/dashboard";
   const { user, register } = useAuth();
 
   const [name, setName] = useState("");
@@ -22,9 +24,9 @@ export default function RegisterPage() {
   // Auto-redirect if already logged in
   useEffect(() => {
     if (user) {
-      router.push("/dashboard");
+      router.replace(redirectTarget);
     }
-  }, [user, router]);
+  }, [user, router, redirectTarget]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +35,7 @@ export default function RegisterPage() {
 
     try {
       await register(email, password, name, company);
-      router.push("/dashboard");
+      router.replace(redirectTarget);
     } catch (err: any) {
       const msg = err.message || "";
       if (msg.includes("already exists")) {
@@ -185,5 +187,17 @@ export default function RegisterPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#fbfcfe] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    }>
+      <RegisterForm />
+    </Suspense>
   );
 }

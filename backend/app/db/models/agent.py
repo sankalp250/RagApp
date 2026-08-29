@@ -33,3 +33,6 @@ class Agent(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     documents = relationship("Document", back_populates="agent", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="agent", cascade="all, delete-orphan")
     knowledge_gaps = relationship("KnowledgeGap", back_populates="agent", cascade="all, delete-orphan")
+    knowledge_sources = relationship("KnowledgeSource", back_populates="agent", cascade="all, delete-orphan")
+    crawl_jobs = relationship("CrawlJob", back_populates="agent", cascade="all, delete-orphan")
+    crawled_pages = relationship("CrawledPage", back_populates="agent", cascade="all, delete-orphan")

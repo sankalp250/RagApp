@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.api.v1 import auth, organizations, agents, documents, chat, widget, analytics
+from backend.app.api.v1 import auth, organizations, agents, documents, chat, widget, analytics, knowledge
 from backend.app.api.v1 import telemetry
 
 api_router = APIRouter()
@@ -13,8 +13,9 @@ api_router.include_router(organizations.router, prefix="/organizations", tags=["
 # ─── Agent Management ────────────────────────────────────────────────────────
 api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
 
-# ─── Knowledge Base Documents ─────────────────────────────────────────────────
+# ─── Knowledge Base Documents & Crawling ──────────────────────────────────────
 api_router.include_router(documents.router, prefix="", tags=["Documents"])
+api_router.include_router(knowledge.router, prefix="/knowledge", tags=["Knowledge Crawler"])
 
 # ─── Chat & RAG ──────────────────────────────────────────────────────────────
 api_router.include_router(chat.router, prefix="", tags=["Chat"])

@@ -6,7 +6,11 @@ import { motion } from "framer-motion";
 import { ArrowRight, Bot, Sparkles, CheckCircle2, ShieldCheck, Zap } from "lucide-react";
 import { fadeUp } from "@/lib/animation";
 
+import { useAuth } from "@/lib/auth-context";
+
 export function CTASection() {
+  const { user } = useAuth();
+
   return (
     <section id="cta-section" className="py-24 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto my-12 relative">
       <motion.div
@@ -36,19 +40,39 @@ export function CTASection() {
           </p>
 
           <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href="/register"
-              className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-white text-indigo-900 text-sm font-bold shadow-xl hover:bg-slate-50 hover:scale-102 transition-all cursor-pointer"
-            >
-              <span>Start Building Free</span>
-              <ArrowRight className="w-4 h-4 text-indigo-600" />
-            </Link>
-            <Link
-              href="/dashboard/chatbots/new"
-              className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/40 text-white text-sm font-bold transition-all cursor-pointer"
-            >
-              <span>Launch Studio Builder</span>
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-white text-indigo-900 text-sm font-bold shadow-xl hover:bg-slate-50 hover:scale-102 transition-all cursor-pointer"
+                >
+                  <span>Go to Studio Dashboard</span>
+                  <ArrowRight className="w-4 h-4 text-indigo-600" />
+                </Link>
+                <Link
+                  href="/dashboard/chatbots/new"
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/40 text-white text-sm font-bold transition-all cursor-pointer"
+                >
+                  <span>Launch Studio Builder</span>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-white text-indigo-900 text-sm font-bold shadow-xl hover:bg-slate-50 hover:scale-102 transition-all cursor-pointer"
+                >
+                  <span>Start Building Free</span>
+                  <ArrowRight className="w-4 h-4 text-indigo-600" />
+                </Link>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/40 text-white text-sm font-bold transition-all cursor-pointer"
+                >
+                  <span>Sign In to Studio</span>
+                </Link>
+              </>
+            )}
           </div>
 
           <div className="pt-8 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-xs text-white/90 font-semibold">

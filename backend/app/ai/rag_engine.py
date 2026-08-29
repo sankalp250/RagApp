@@ -42,8 +42,9 @@ except ImportError:
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
-from backend.app.db.models.document import DocumentChunk
+from backend.app.db.models.document import DocumentChunk, Document
 from backend.app.db.models.agent import Agent
 from backend.app.db.models.conversation import Message, RetrievalEvidence
 from backend.app.ai.embeddings.service import EmbeddingService
@@ -453,12 +454,19 @@ async def _get_or_build_index_internal(
     agent_id: str,
     organization_id: str,
 ) -> Optional[_AgentIndex]:
-    """Queries chunks from DB, constructs inverted BM25 & dense matrix, caches in memory."""
+    """
+    Queries chunks from DB, constructs inverted BM25 & dense matrix, caches in memory.
+    Only loads chunks from ACTIVE, READY documents to prevent deprecated/removed
+    website pages from appearing in retrieval results.
+    """
     stmt = (
         select(DocumentChunk)
+        .join(Document, DocumentChunk.document_id == Document.id)
         .where(
             DocumentChunk.agent_id == agent_id,
             DocumentChunk.organization_id == organization_id,
+            Document.is_active == True,
+            Document.status == "READY",
         )
         .filter(DocumentChunk.embedding.isnot(None))
     )
@@ -581,16 +589,35 @@ async def retrieve_context(
     source_chunks = []
     raw_chunks = []
     for rank, (rrf_score, chunk) in enumerate(fused):
+        meta = chunk.chunk_metadata or {}
         source_chunks.append(SourceChunk(
             chunk_id=str(chunk.id),
             content=chunk.content,
             similarity_score=round(rrf_score, 4),
             rank=rank + 1,
-            document_filename=chunk.chunk_metadata.get("filename")
+            # Legacy file field
+            document_filename=meta.get("filename"),
+            # Rich attribution fields (populated for website and file chunks)
+            document_id=meta.get("document_id"),
+            source_url=meta.get("source_url"),
+            title=meta.get("title"),
+            knowledge_source_id=meta.get("knowledge_source_id"),
+            crawl_id=meta.get("crawl_id"),
+            source_type=meta.get("source_type"),
         ))
         raw_chunks.append(chunk)
 
     return source_chunks, raw_chunks
+
+
+# ─── LLM Result NamedTuple ────────────────────────────────────────────────────
+from typing import NamedTuple
+
+class LLMResult(NamedTuple):
+    """Return value of generate_answer — supports both attribute access and tuple unpacking."""
+    answer: str
+    input_tokens: int
+    output_tokens: int
 
 
 # ─── LLM Generation (unchanged, routing maintained) ───────────────────────────
@@ -599,15 +626,15 @@ async def generate_answer(
     user_message: str,
     context_chunks: List[SourceChunk],
     conversation_history: List[Dict[str, str]]
-) -> Tuple[str, int, int]:
-    """Generate a full LLM answer. Returns (answer_text, input_tokens, output_tokens)."""
+) -> LLMResult:
+    """Generate a full LLM answer. Returns LLMResult(answer, input_tokens, output_tokens)."""
     tokens = []
     async for token in generate_answer_stream(agent, user_message, context_chunks, conversation_history):
         tokens.append(token)
     answer = "".join(tokens)
     in_tok = len(user_message) // 4 + sum(len(c.content) for c in context_chunks) // 4
     out_tok = len(answer) // 4
-    return answer, in_tok, out_tok
+    return LLMResult(answer=answer, input_tokens=in_tok, output_tokens=out_tok)
 
 
 GUARDRAIL_REFUSAL_MESSAGE = (
@@ -647,9 +674,15 @@ async def generate_answer_stream(
         return
 
     if context_chunks:
-        context_str = "\n\n---\n\n".join(
-            f"[Source {c.rank}] {c.content}" for c in context_chunks
-        )
+        context_parts = []
+        for c in context_chunks:
+            header = f"[Source {c.rank}]"
+            if c.title:
+                header += f" {c.title}"
+            if c.source_url:
+                header += f" ({c.source_url})"
+            context_parts.append(f"{header}\n{c.content}")
+        context_str = "\n\n---\n\n".join(context_parts)
         context_block = f"<context>\n{context_str}\n</context>\n\n"
     else:
         context_block = ""

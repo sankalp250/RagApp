@@ -53,6 +53,42 @@ async def _get_agent_by_public_key(public_key: str, db: AsyncSession) -> Agent:
     return agent
 
 
+from backend.app.schemas.crawler import WidgetBootstrapRequest, WidgetBootstrapResponse
+from backend.app.domains.crawler.service import CrawlerService
+
+
+@router.post(
+    "/bootstrap",
+    response_model=WidgetBootstrapResponse,
+    summary="Initialize widget and automatically trigger initial website crawl if needed"
+)
+async def bootstrap_widget(
+    request: WidgetBootstrapRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Called by embed widget on load.
+    Validates origin against agent's authorized domains, idempotently initiates
+    the initial website crawl, and returns widget configuration and knowledge status.
+    """
+    return await CrawlerService.bootstrap_widget(db, request)
+
+
+@router.post(
+    "/{public_key}/bootstrap",
+    response_model=WidgetBootstrapResponse,
+    summary="Initialize widget by public key and automatically trigger initial website crawl"
+)
+async def bootstrap_widget_by_key(
+    public_key: str,
+    request: WidgetBootstrapRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Path-based bootstrap endpoint identifying agent by public_key in URL."""
+    request.public_key = public_key
+    return await CrawlerService.bootstrap_widget(db, request)
+
+
 @router.get(
     "/{public_key}/config",
     summary="Get widget configuration for a public agent key"
