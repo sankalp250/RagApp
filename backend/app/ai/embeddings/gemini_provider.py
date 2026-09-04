@@ -77,9 +77,14 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
 
         # Fallback to concurrent single embeddings if batch API signature differs
         async def _embed_fallback(t: str) -> List[float]:
-            v = await asyncio.to_thread(self._sync_embed, t)
-            set_cached_embedding(t, v)
-            return v
+            try:
+                v = await asyncio.to_thread(self._sync_embed, t)
+                set_cached_embedding(t, v)
+                return v
+            except Exception as e:
+                from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
+                local_provider = LocalEmbeddingProvider(dimension=self._dim)
+                return await local_provider.embed_query(t)
 
         fallback_res = await asyncio.gather(*[_embed_fallback(t) for t in missing_texts])
         for idx, emb in zip(missing_indices, fallback_res):
@@ -88,7 +93,9 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
 
     async def embed_query(self, query: str) -> List[float]:
         if not self.client:
-            raise ValueError("Gemini API key is not configured.")
+            from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
+            local_provider = LocalEmbeddingProvider(dimension=self._dim)
+            return await local_provider.embed_query(query)
         
         # Check L1 embedding cache (< 0.05ms)
         cached = get_cached_embedding(query)
@@ -109,7 +116,13 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
             set_cached_embedding(query, values)
             return values
         except Exception:
-            values = await asyncio.to_thread(self._sync_embed, query)
-            set_cached_embedding(query, values)
-            return values
+            try:
+                values = await asyncio.to_thread(self._sync_embed, query)
+                set_cached_embedding(query, values)
+                return values
+            except Exception as e:
+                from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
+                logger.warning(f"Gemini API embed_query failed ({e}), using local deterministic fallback")
+                local_provider = LocalEmbeddingProvider(dimension=self._dim)
+                return await local_provider.embed_query(query)
 

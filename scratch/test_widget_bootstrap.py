@@ -90,10 +90,10 @@ async def run_all_tests():
         db.add(source)
         await db.commit()
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 1: First Widget Load (Initial Crawl Triggered)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 1. First Widget Load ──────────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 1. First Widget Load ------------------------------")
     async with AsyncSessionLocal() as db:
         req1 = WidgetBootstrapRequest(
             public_key=public_key,
@@ -105,10 +105,10 @@ async def run_all_tests():
         check("1. First widget load: knowledge_status='processing'", res1.knowledge_status == "processing")
         check("1. First widget load: crawl_job_id created", res1.crawl_job_id is not None, f"job_id={res1.crawl_job_id}")
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 2: Second Widget Load (Idempotent, No Duplicate Crawl)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 2. Second Widget Load ─────────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 2. Second Widget Load -----------------------------")
     async with AsyncSessionLocal() as db:
         req2 = WidgetBootstrapRequest(
             public_key=public_key,
@@ -120,10 +120,10 @@ async def run_all_tests():
         check("2. Second widget load: knowledge_status='processing'", res2.knowledge_status == "processing")
         check("2. Second widget load: returns same active job", res2.crawl_job_id == res1.crawl_job_id)
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 3: 100 Concurrent Widget Loads (Distributed Lock Race Test)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 3. 100 Concurrent Widget Loads ────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 3. 100 Concurrent Widget Loads --------------------")
     # Create fresh agent & source for isolated race test
     agent_id_race = f"agent_race_{ts}"
     pk_race = f"pk_race_{ts}"
@@ -178,10 +178,10 @@ async def run_all_tests():
     check("3. 100 concurrent loads: exactly 1 request triggered crawl", triggered_count == 1, f"triggered={triggered_count}")
     check("3. 100 concurrent loads: database contains EXACTLY 1 CrawlJob", db_job_count == 1, f"db_jobs={db_job_count}")
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 4: Valid Origin (Allowed Domains in Agent Configuration)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 4. Valid Origin via allowed_domains ────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 4. Valid Origin via allowed_domains ----------------")
     async with AsyncSessionLocal() as db:
         req4 = WidgetBootstrapRequest(
             public_key=public_key,
@@ -191,10 +191,10 @@ async def run_all_tests():
         check("4. Valid origin (mycompany.com): widget_ready=True", res4.widget_ready is True)
         check("4. Valid origin: allowed and processed", res4.knowledge_status in ("processing", "ready"))
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 5: Invalid Origin (Unauthorized Hacker Origin)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 5. Invalid Origin ──────────────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 5. Invalid Origin ----------------------------------")
     async with AsyncSessionLocal() as db:
         req5 = WidgetBootstrapRequest(
             public_key=public_key,
@@ -206,10 +206,10 @@ async def run_all_tests():
         check("5. Invalid origin: crawl_triggered=False", res5.crawl_triggered is False)
         check("5. Invalid origin: error message populated", res5.error is not None)
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 6: Same Agent on Different Unauthorized Domain
-    # ──────────────────────────────────────────────────────────
-    print("\n── 6. Domain Mismatch ─────────────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 6. Domain Mismatch ---------------------------------")
     async with AsyncSessionLocal() as db:
         req6 = WidgetBootstrapRequest(
             agent_id=agent_id,
@@ -219,10 +219,10 @@ async def run_all_tests():
         check("6. Domain mismatch: widget_ready=False", res6.widget_ready is False)
         check("6. Domain mismatch: knowledge_status='unauthorized'", res6.knowledge_status == "unauthorized")
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 7: Already Crawled Website (Status COMPLETED)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 7. Already Crawled Website ─────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 7. Already Crawled Website -------------------------")
     agent_id_comp = f"agent_comp_{ts}"
     pk_comp = f"pk_comp_{ts}"
     source_id_comp = f"ks_comp_{ts}"
@@ -259,10 +259,10 @@ async def run_all_tests():
         check("7. Completed crawl: knowledge_status='ready'", res7.knowledge_status == "ready")
         check("7. Completed crawl: crawl_triggered=False", res7.crawl_triggered is False)
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 8: Crawl in Progress (Status RUNNING)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 8. Crawl in Progress ───────────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 8. Crawl in Progress -------------------------------")
     agent_id_run = f"agent_run_{ts}"
     pk_run = f"pk_run_{ts}"
     source_id_run = f"ks_run_{ts}"
@@ -295,10 +295,10 @@ async def run_all_tests():
         check("8. Crawl in progress: knowledge_status='processing'", res8.knowledge_status == "processing")
         check("8. Crawl in progress: crawl_triggered=False", res8.crawl_triggered is False)
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 9: Failed Crawl (Cooldown Active)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 9. Failed Crawl (Cooldown Active) ──────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 9. Failed Crawl (Cooldown Active) ------------------")
     agent_id_fail = f"agent_fail_{ts}"
     pk_fail = f"pk_fail_{ts}"
     source_id_fail = f"ks_fail_{ts}"
@@ -331,10 +331,10 @@ async def run_all_tests():
         check("9. Failed crawl during cooldown: knowledge_status='failed'", res9.knowledge_status == "failed")
         check("9. Failed crawl during cooldown: crawl_triggered=False", res9.crawl_triggered is False)
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Test 10: Retry Failed Crawl (Explicit force_retry=True)
-    # ──────────────────────────────────────────────────────────
-    print("\n── 10. Retry Failed Crawl ────────────────────────────")
+    # ----------------------------------------------------------
+    print("\n-- 10. Retry Failed Crawl ----------------------------")
     async with AsyncSessionLocal() as db:
         req10 = WidgetBootstrapRequest(
             public_key=pk_fail,
@@ -346,9 +346,9 @@ async def run_all_tests():
         check("10. Retry: knowledge_status='processing'", res10.knowledge_status == "processing")
         check("10. Retry: new job ID generated", res10.crawl_job_id is not None and res10.crawl_job_id != job_fail.id)
 
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     # Summary
-    # ──────────────────────────────────────────────────────────
+    # ----------------------------------------------------------
     print("\n" + "=" * 65)
     passed = sum(1 for v in results.values() if v)
     failed = sum(1 for v in results.values() if not v)

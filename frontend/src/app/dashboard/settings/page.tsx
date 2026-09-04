@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Settings,
   ShieldCheck,
@@ -12,10 +12,21 @@ import {
   Copy,
   Check,
 } from "lucide-react";
+import { authStorage } from "@/lib/api";
 
 export default function SettingsPage() {
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
-  const apiKey = "chatin_live_948fba819283f019a82";
+  const [apiKey, setApiKey] = useState("");
+
+  useEffect(() => {
+    const token = authStorage.getToken();
+    const user = authStorage.getUser();
+    if (token) {
+      setApiKey(token);
+    } else if (user?.organization_id) {
+      setApiKey(`org_token_${user.organization_id}`);
+    }
+  }, []);
 
   return (
     <div className="space-y-8 max-w-4xl">

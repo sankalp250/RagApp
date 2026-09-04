@@ -33,9 +33,9 @@ import time
 from typing import Dict, Optional
 from urllib.parse import urljoin, urlparse
 
-# ──────────────────────────────────────────────────────────────
+# --------------------------------------------------------------
 # Inline test harness (no external server needed for unit tests)
-# ──────────────────────────────────────────────────────────────
+# --------------------------------------------------------------
 
 PASS = "\033[92m✓\033[0m"
 FAIL = "\033[91m✗\033[0m"
@@ -50,9 +50,9 @@ def check(name: str, condition: bool, detail: str = "") -> None:
     print(f"  {icon}  [{status}] {name}{extra}")
 
 
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 # MODULE-LEVEL UNIT TESTS (no I/O, pure logic)
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 
 def test_url_tools():
     """Tests: 5. Duplicate URLs, 14. Domain escape, 15. SSRF"""
@@ -64,7 +64,7 @@ def test_url_tools():
         is_valid_crawl_url,
     )
 
-    print("\n── URL Tools ──────────────────────────────────────────")
+    print("\n-- URL Tools ------------------------------------------")
 
     # Test 5: Duplicate URL normalization (fragments, trailing slashes, tracking params)
     root = "https://example.com"
@@ -128,7 +128,7 @@ def test_html_cleaner():
     """Tests: 1. Static HTML, 7. Canonical URLs, 17. Broken HTML, 16. Large page"""
     from backend.app.domains.crawler.html_cleaner import HTMLCleaner, MIN_MEANINGFUL_WORDS
 
-    print("\n── HTML Cleaner ───────────────────────────────────────")
+    print("\n-- HTML Cleaner ---------------------------------------")
 
     # Test 1: Simple static HTML extraction
     static_html = b"""
@@ -227,7 +227,7 @@ def test_robots_parser():
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    print("\n── Robots.txt Parser ──────────────────────────────────")
+    print("\n-- Robots.txt Parser ----------------------------------")
 
     # Test robots.txt parsing directly (no HTTP needed)
     from backend.app.domains.crawler.robots import RobotsParser
@@ -261,7 +261,7 @@ def test_sitemap_parser():
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    print("\n── Sitemap Discoverer ─────────────────────────────────")
+    print("\n-- Sitemap Discoverer ---------------------------------")
 
     from backend.app.domains.crawler.sitemap import SitemapDiscoverer
 
@@ -342,7 +342,7 @@ def test_http_error_handling():
     from unittest.mock import AsyncMock, MagicMock, patch
     import httpx
 
-    print("\n── HTTP Error Handling ────────────────────────────────")
+    print("\n-- HTTP Error Handling --------------------------------")
 
     # We test the _fetch_with_retry logic by mocking httpx client responses
 
@@ -405,7 +405,7 @@ def test_content_deduplication():
     """Tests: 12. Content unchanged, 13. Content changed"""
     from backend.app.domains.crawler.html_cleaner import HTMLCleaner
 
-    print("\n── Content Deduplication ──────────────────────────────")
+    print("\n-- Content Deduplication ------------------------------")
 
     content_v1 = b"""<html><head><title>Docs</title></head><body>
     <main>
@@ -446,7 +446,7 @@ def test_security_comprehensive():
     """Tests: 15. SSRF (comprehensive)"""
     from backend.app.domains.crawler.url_tools import is_safe_ssrf_url, is_valid_crawl_url
 
-    print("\n── Security Comprehensive ─────────────────────────────")
+    print("\n-- Security Comprehensive -----------------------------")
 
     blocked = [
         "http://127.0.0.1/",
@@ -478,9 +478,9 @@ def test_security_comprehensive():
         check(f"15. SSRF: {url!r} allowed", is_safe_ssrf_url(url))
 
 
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 # MAIN RUNNER
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 
 def main():
     print("=" * 60)

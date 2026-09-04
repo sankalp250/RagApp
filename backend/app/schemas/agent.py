@@ -50,3 +50,19 @@ class WidgetSessionResponse(BaseModel):
     agent_id: str
     agent_name: str
     configuration: Dict[str, Any]
+
+
+class AgentPublicConfigResponse(BaseModel):
+    """Safe public configuration for web and widget embedding (zero secret leakage)."""
+    agent_id: str
+    public_key: str
+    name: str
+    bot_title: str = "AI Assistant"
+    greeting_message: str = "Hello! How can I help you today?"
+    primary_color: str = "#6366f1"
+    placeholder_text: str = "Ask a question..."
+    suggested_questions: List[str] = []
+    allowed_domains: List[str] = []
+    position: str = "bottom-right"
+    status: str = "ACTIVE"
+    is_published: bool = True

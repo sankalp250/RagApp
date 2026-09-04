@@ -159,44 +159,144 @@ def compute_answer_quality(answer: str) -> float:
     return round(quality, 4)
 
 
-# ─── Composite Evaluator ─────────────────────────────────────────────────────
+# ─── Multi-Signal Ignorance & Deflection Detection ──────────────────────────
+
+_IGNORANCE_PATTERNS = [
+    r"i (don't|do not) (have|find|possess|know|have any|contain) (information|data|details|context|record)",
+    r"i('m| am) not sure",
+    r"not mentioned in (the|our) (documents|context|knowledge|records)",
+    r"unable to (find|locate|determine|answer)",
+    r"outside (of )?my knowledge",
+    r"i (cannot|can't) (find|answer|help with this specific)",
+    r"no (relevant )?(information|data|documentation) (available|found)",
+    r"insufficient (information|context|details)",
+]
+
+
+def detect_ignorance_admission(answer: str) -> bool:
+    """Check if the LLM explicitly admitted lack of knowledge."""
+    if not answer:
+        return False
+    lower = answer.lower().strip()
+    for pattern in _IGNORANCE_PATTERNS:
+        if re.search(pattern, lower):
+            return True
+    return False
+
+
+def detect_repeated_user_query(
+    conversation_history: List[dict],
+    current_query: str,
+    similarity_threshold: float = 0.30
+) -> bool:
+    """
+    Detect if the user repeated a similar question earlier in the session,
+    signaling that prior bot answers failed to resolve their inquiry.
+    """
+    if not conversation_history or not current_query:
+        return False
+
+    stopwords = {"can", "could", "how", "what", "where", "why", "who", "i", "my", "you", "your", "the", "a", "an", "do", "does", "is", "are"}
+
+    def _tokenize_set(t: str) -> set:
+        tokens = set(re.findall(r'\b\w{3,}\b', t.lower()))
+        return {w for w in tokens if w not in stopwords}
+
+    curr_tokens = _tokenize_set(current_query)
+    if not curr_tokens:
+        return False
+
+    for msg in conversation_history:
+        if msg.get("role") == "user":
+            prev_tokens = _tokenize_set(msg.get("content", ""))
+            if prev_tokens:
+                common = curr_tokens & prev_tokens
+                union = curr_tokens | prev_tokens
+                jaccard = len(common) / len(union) if union else 0.0
+                if jaccard >= similarity_threshold or len(common) >= 2:
+                    return True
+    return False
+
+
+# ─── Composite Multi-Signal Evaluator ────────────────────────────────────────
 
 def evaluate_response(
     answer: str,
     source_chunks: List[SourceChunk],
+    user_query: Optional[str] = None,
+    conversation_history: Optional[List[dict]] = None,
     user_feedback_rating: Optional[int] = None
 ) -> dict:
     """
-    Run all 3 signal evaluators and return a composite evaluation dict.
-    Optionally blends in user feedback (1-5 stars → 0.0-1.0).
+    Comprehensive multi-signal response evaluation.
+    Evaluates retrieval relevance, grounding, model ignorance, answer quality,
+    human feedback, and repeated user queries to identify Knowledge Gap Failure Candidates.
     """
     retrieval = compute_retrieval_score(source_chunks)
     grounding = compute_grounding_score(answer, source_chunks)
     quality = compute_answer_quality(answer)
+    admitted_ignorance = detect_ignorance_admission(answer)
+    repeated_query = detect_repeated_user_query(conversation_history or [], user_query or "")
 
-    # Composite: weighted average
+    # Multi-signal failure reasons & category classification
+    failure_reasons: List[str] = []
+    failure_category: Optional[str] = None
+
+    if not source_chunks or len(source_chunks) == 0:
+        failure_reasons.append("Zero relevant knowledge chunks retrieved")
+        failure_category = "NO_RELEVANT_DOCUMENTS"
+    elif retrieval < 0.38:
+        failure_reasons.append(f"Low retrieval relevance score ({retrieval:.2f})")
+        failure_category = "LOW_CONFIDENCE_RETRIEVAL"
+
+    if admitted_ignorance:
+        failure_reasons.append("Model explicitly admitted ignorance or lack of context")
+        failure_category = failure_category or "MODEL_ADMITTED_IGNORANCE"
+
+    if grounding < 0.35 and not admitted_ignorance:
+        failure_reasons.append(f"Weak grounding / potential hallucination ({grounding:.2f})")
+        failure_category = failure_category or "POOR_GROUNDING"
+
+    if user_feedback_rating is not None and user_feedback_rating <= 2:
+        failure_reasons.append(f"Negative user feedback (rating {user_feedback_rating}/5)")
+        failure_category = "NEGATIVE_FEEDBACK"
+
+    if repeated_query:
+        failure_reasons.append("User repeated similar question in same conversation")
+        failure_category = failure_category or "REPEATED_QUESTION"
+
+    # Composite quality score
     composite = round(
-        (retrieval * 0.30) + (grounding * 0.40) + (quality * 0.30),
+        (retrieval * 0.35) + (grounding * 0.35) + (quality * 0.30),
         4
     )
 
-    # If human feedback is available, blend it in (20% weight)
     if user_feedback_rating is not None:
-        human_score = (user_feedback_rating - 1) / 4.0  # normalize 1-5 → 0-1
-        composite = round((composite * 0.8) + (human_score * 0.2), 4)
+        human_norm = max(0.0, (user_feedback_rating - 1) / 4.0)
+        composite = round((composite * 0.75) + (human_norm * 0.25), 4)
 
-    potential_gap = retrieval < 0.4 or grounding < 0.3 or composite < 0.4
+    is_failure_candidate = (
+        len(failure_reasons) > 0 or
+        composite < 0.40 or
+        admitted_ignorance or
+        (user_feedback_rating is not None and user_feedback_rating <= 2)
+    )
 
     return {
         "retrieval_score": retrieval,
         "grounding_score": grounding,
         "answer_quality_score": quality,
         "composite_score": composite,
-        "potential_gap": potential_gap,
+        "potential_gap": is_failure_candidate,
+        "is_failure_candidate": is_failure_candidate,
+        "failure_category": failure_category or ("GENERAL_QUALITY_FAILURE" if is_failure_candidate else "NONE"),
+        "failure_reasons": failure_reasons,
         "signals": {
             "has_context": len(source_chunks) > 0,
             "context_count": len(source_chunks),
-            "answer_length": len(answer),
-            "feedback_included": user_feedback_rating is not None
+            "answer_length": len(answer) if answer else 0,
+            "admitted_ignorance": admitted_ignorance,
+            "repeated_query": repeated_query,
+            "feedback_rating": user_feedback_rating,
         }
     }

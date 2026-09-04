@@ -109,6 +109,14 @@ async def init_db() -> None:
             ("crawled_pages", "change_status", "VARCHAR(50) DEFAULT 'NEW'"),
             ("crawled_pages", "crawl_version", "INTEGER DEFAULT 1"),
             ("crawled_pages", "is_active", "BOOLEAN DEFAULT 1"),
+            ("knowledge_gaps", "topic", "VARCHAR(255)"),
+            ("knowledge_gaps", "sample_questions", "TEXT DEFAULT '[]'"),
+            ("knowledge_gaps", "confidence", "FLOAT DEFAULT 0.5"),
+            ("knowledge_gaps", "embedding", "TEXT"),
+            ("knowledge_gaps", "retrieval_metrics", "TEXT DEFAULT '{}'"),
+            ("knowledge_gaps", "feedback_metrics", "TEXT DEFAULT '{}'"),
+            ("knowledge_gaps", "first_seen_at", "TIMESTAMP"),
+            ("knowledge_gaps", "last_seen_at", "TIMESTAMP"),
         ]
         for tbl, col, col_type in columns_to_add:
             try:

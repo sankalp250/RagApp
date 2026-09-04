@@ -24,7 +24,7 @@ from typing import Callable, Dict
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.app.core.logging import logger
+from backend.app.core.logging import logger, ctx_request_id
 
 # ─── In-Process Telemetry Store ───────────────────────────────────────────────
 STATS_WINDOW_SECONDS = 60.0  # rolling window for p50/p95/p99 approximations
@@ -119,6 +119,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         # 1. Extract or generate Request ID
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
+        ctx_request_id.set(request_id)
 
         # 2. Measure wall-clock time
         start = time.perf_counter()

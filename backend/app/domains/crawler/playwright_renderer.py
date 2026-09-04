@@ -56,6 +56,10 @@ BLOCKED_RESOURCE_TYPES = {"image", "media", "font", "stylesheet", "websocket"}
 WAIT_UNTIL = "domcontentloaded"
 
 
+# Concurrency Semaphore to prevent memory exhaustion under high load
+_RENDER_SEMAPHORE = asyncio.Semaphore(3)
+
+
 class PlaywrightRenderer:
     """
     Async singleton wrapper around Playwright Chromium.
@@ -139,66 +143,68 @@ class PlaywrightRenderer:
     async def render(self, url: str) -> Optional[str]:
         """
         Render `url` in a headless Chromium browser and return the full HTML.
+        Bounded by _RENDER_SEMAPHORE to prevent memory exhaustion under concurrent loads.
         Returns None on any failure (timeout, crash, navigation error).
         """
         if not self._is_alive():
             logger.warning("Playwright browser is not alive — skipping Tier 2 render.")
             return None
 
-        context: Optional["BrowserContext"] = None
-        page: Optional["Page"] = None
-        try:
-            context = await self._browser.new_context(
-                user_agent="RagCrawlerBot/1.0 (compatible; Chromium/playwright)",
-                ignore_https_errors=True,
-                java_script_enabled=True,
-            )
+        async with _RENDER_SEMAPHORE:
+            context: Optional["BrowserContext"] = None
+            page: Optional["Page"] = None
+            try:
+                context = await self._browser.new_context(
+                    user_agent="RagCrawlerBot/1.0 (compatible; Chromium/playwright)",
+                    ignore_https_errors=True,
+                    java_script_enabled=True,
+                )
 
-            page = await context.new_page()
+                page = await context.new_page()
 
-            # Block unnecessary resource types
-            async def _block(route):
-                if route.request.resource_type in BLOCKED_RESOURCE_TYPES:
-                    await route.abort()
-                else:
-                    await route.continue_()
+                # Block unnecessary resource types
+                async def _block(route):
+                    if route.request.resource_type in BLOCKED_RESOURCE_TYPES:
+                        await route.abort()
+                    else:
+                        await route.continue_()
 
-            await page.route("**/*", _block)
+                await page.route("**/*", _block)
 
-            # Navigate
-            response = await page.goto(
-                url,
-                timeout=RENDER_TIMEOUT_MS,
-                wait_until=WAIT_UNTIL,
-            )
+                # Navigate
+                response = await page.goto(
+                    url,
+                    timeout=RENDER_TIMEOUT_MS,
+                    wait_until=WAIT_UNTIL,
+                )
 
-            if response and response.status >= 400:
-                logger.debug(f"Playwright: HTTP {response.status} for {url}")
+                if response and response.status >= 400:
+                    logger.debug(f"Playwright: HTTP {response.status} for {url}")
+                    return None
+
+                # Wait for network to settle (best-effort; ignore timeout)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
+                except Exception:
+                    pass  # networkidle timeout is acceptable
+
+                html = await page.content()
+
+                if len(html.encode("utf-8", errors="replace")) > MAX_CONTENT_BYTES:
+                    html = html[:MAX_CONTENT_BYTES]
+
+                logger.debug(f"Playwright: rendered {url} ({len(html)} chars)")
+                return html
+
+            except Exception as exc:
+                logger.warning(f"Playwright render failed for {url}: {type(exc).__name__}: {exc}")
                 return None
 
-            # Wait for network to settle (best-effort; ignore timeout)
-            try:
-                await page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
-            except Exception:
-                pass  # networkidle timeout is acceptable
-
-            html = await page.content()
-
-            if len(html.encode("utf-8", errors="replace")) > MAX_CONTENT_BYTES:
-                html = html[:MAX_CONTENT_BYTES]
-
-            logger.debug(f"Playwright: rendered {url} ({len(html)} chars)")
-            return html
-
-        except Exception as exc:
-            logger.warning(f"Playwright render failed for {url}: {type(exc).__name__}: {exc}")
-            return None
-
-        finally:
-            try:
-                if page:
-                    await page.close()
-                if context:
-                    await context.close()
-            except Exception:
-                pass
+            finally:
+                try:
+                    if page:
+                        await page.close()
+                    if context:
+                        await context.close()
+                except Exception:
+                    pass

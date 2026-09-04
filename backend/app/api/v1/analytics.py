@@ -51,7 +51,7 @@ async def list_knowledge_gaps(
     stmt = (
         select(KnowledgeGap)
         .where(KnowledgeGap.organization_id == current_user.organization_id)
-        .order_by(desc(KnowledgeGap.frequency), desc(KnowledgeGap.created_at))
+        .order_by(desc(KnowledgeGap.frequency), desc(KnowledgeGap.confidence), desc(KnowledgeGap.last_seen_at))
         .limit(limit)
     )
     if agent_id:
@@ -67,13 +67,21 @@ async def list_knowledge_gaps(
         "gaps": [
             {
                 "id": str(g.id),
+                "agent_id": str(g.agent_id),
+                "topic": g.topic or g.query,
                 "query": g.query,
-                "category": g.category,
+                "sample_questions": g.sample_questions or [g.query],
+                "occurrence_count": g.frequency,
                 "frequency": g.frequency,
+                "confidence": round(g.confidence, 2) if g.confidence is not None else 0.5,
+                "category": g.category,
                 "status": g.status,
-                "agent_id": g.agent_id,
+                "retrieval_metrics": g.retrieval_metrics or {},
+                "feedback_metrics": g.feedback_metrics or {},
+                "first_seen": g.first_seen_at.isoformat() if g.first_seen_at else (g.created_at.isoformat() if g.created_at else None),
+                "last_seen": g.last_seen_at.isoformat() if g.last_seen_at else (g.updated_at.isoformat() if g.updated_at else None),
                 "created_at": g.created_at.isoformat() if g.created_at else None,
-                "recommended_action": g.recommended_action
+                "recommended_action": g.recommended_action or f"Add documentation covering {g.topic or g.query}"
             }
             for g in gaps
         ]

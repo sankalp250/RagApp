@@ -189,12 +189,24 @@ class WebsiteCrawler:
         # Always include the root URL itself
         self._enqueue_if_valid(self.root_url, depth=0)
 
+        # SSRF Redirect Interceptor: validates every 3xx redirect destination
+        async def _check_redirect_ssrf(response: httpx.Response):
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                if location:
+                    from backend.app.domains.crawler.url_tools import is_safe_url
+                    full_redirect_url = str(response.url.join(location))
+                    if not is_safe_url(full_redirect_url):
+                        logger.warning(f"[SSRF Protection] Blocked dangerous redirect to: {full_redirect_url}")
+                        raise httpx.RequestError(f"Blocked SSRF redirect destination: {full_redirect_url}", request=response.request)
+
         # Step 3: bounded concurrency crawl loop
         async with httpx.AsyncClient(
             timeout=self.request_timeout,
             follow_redirects=True,
             headers={"User-Agent": USER_AGENT},
             limits=httpx.Limits(max_connections=self.max_concurrent + 2),
+            event_hooks={"response": [_check_redirect_ssrf]},
         ) as http_client:
 
             workers = [

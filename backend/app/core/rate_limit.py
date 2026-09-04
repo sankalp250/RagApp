@@ -126,6 +126,7 @@ class RateLimiter:
 
 # ─── Rate Limiter Instances (Production-Grade High Capacity) ───────────────────
 widget_limiter = RateLimiter(capacity=60, refill_rate=1.0)       # 60 req/min per IP for widget
+crawler_limiter = RateLimiter(capacity=20, refill_rate=0.33)     # 20 burst, 1 req per 3s for crawler ops
 api_limiter = RateLimiter(capacity=300, refill_rate=5.0)          # 300 req/min per Org
 chat_limiter = RateLimiter(capacity=60, refill_rate=1.0)          # 60 req/min per visitor
 
@@ -134,13 +135,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Applies rate limiting based on endpoint type:
     - /api/v1/widget/** → by client IP
+    - /api/v1/crawler/** → dedicated crawler limiter by organization_id / IP
     - /api/v1/** (auth) → by organization_id extracted from Bearer JWT
+    - /widget.js → attached CDN Cache-Control headers
     """
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip rate limiting on OPTIONS preflight and health/docs/asset endpoints
-        if request.method == "OPTIONS" or path in {"/health", "/ready", "/docs", "/redoc", "/openapi.json"} or path.startswith("/widget.js"):
+        # Attach CDN Cache-Control headers on static widget script
+        if path.startswith("/widget.js") or path.endswith("/widget.js"):
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+            return response
+
+        # Skip rate limiting on OPTIONS preflight and health/docs endpoints
+        if request.method == "OPTIONS" or path in {"/health", "/ready", "/docs", "/redoc", "/openapi.json"}:
             return await call_next(request)
 
         if "/widget/" in path:
@@ -148,6 +157,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             key = f"rl:widget:{client_ip}"
             allowed, remaining = await widget_limiter.is_allowed(key)
             limit_capacity = widget_limiter.capacity
+        elif "/crawler" in path:
+            client_ip = request.client.host if request.client else "unknown"
+            key = f"rl:crawler:{client_ip}"
+            allowed, remaining = await crawler_limiter.is_allowed(key)
+            limit_capacity = crawler_limiter.capacity
         else:
             # Safely extract Org ID or User Sub directly from Authorization Bearer header
             org_id = "anon"

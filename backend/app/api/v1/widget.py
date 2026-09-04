@@ -15,7 +15,7 @@ from typing import Optional, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from backend.app.api.deps import get_db
 from backend.app.db.models.agent import Agent
@@ -34,19 +34,22 @@ _AGENT_L1_CACHE = LRUTtlCache(maxsize=1000)
 _AGENT_L1_TTL = 3600.0  # 1 hour (invalidated explicitly on updates)
 
 async def _get_agent_by_public_key(public_key: str, db: AsyncSession) -> Agent:
-    """Lookup agent by public_key with L1 memory caching. Raises 404 if not found or INACTIVE."""
+    """Lookup agent by public_key or agent_id with L1 memory caching. Raises 404 if not found or INACTIVE."""
     # Check L1 cache first (< 0.01ms)
     agent = _AGENT_L1_CACHE.get(public_key)
     if agent is not None:
         return agent
 
-    stmt = select(Agent).where(Agent.public_key == public_key, Agent.status == "ACTIVE")
+    stmt = select(Agent).where(
+        or_(Agent.public_key == public_key, Agent.id == public_key),
+        Agent.status == "ACTIVE"
+    )
     result = await db.execute(stmt)
     agent = result.scalars().first()
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No active agent found for key '{public_key}'."
+            detail=f"No active agent found for key or ID '{public_key}'."
         )
     # Cache in L1 memory
     _AGENT_L1_CACHE.set(public_key, agent, ttl=_AGENT_L1_TTL)

@@ -1,81 +1,112 @@
-/**
+﻿/**
  * ╔══════════════════════════════════════════════════════════════════════════╗
- * ║  Liquid Glass AI Chatbot Widget                                         ║
- * ║  Production-grade embeddable chat widget with RAG knowledge intelligence ║
+ * ║  Universal Production AI Chatbot Widget (Shadow DOM Encapsulated)        ║
+ * ║  Multi-Platform: HTML, React, Next.js, Vue, Shopify                      ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  */
 (function () {
   'use strict';
 
-  // Read configuration from script tag attributes
+  // Prevent duplicate initialization
+  if (window.__RAG_WIDGET_INITIALIZED__) return;
+  window.__RAG_WIDGET_INITIALIZED__ = true;
+
+  // 1. Resolve Script Attributes & Configuration
   const currentScript =
     document.currentScript ||
-    document.querySelector('script[data-public-key], script[data-agent-id], script[src*="widget.js"]');
+    document.querySelector('script[data-agent-id], script[data-public-key], script[src*="widget.js"]');
 
-  const config = {
-    publicKey: currentScript?.getAttribute('data-public-key') || 'e8826362-9dcb-4177-b830-dd8ebdd09ca5',
-    agentId: currentScript?.getAttribute('data-agent-id') || '',
-    apiUrl: (currentScript?.getAttribute('data-api-url') || 'http://127.0.0.1:8000').replace(/\/+$/, ''),
-    title: currentScript?.getAttribute('data-title') || 'Aria AI Assistant',
-    greeting: currentScript?.getAttribute('data-greeting') || 'Hi there! 👋 How can I help you today?',
+  const rawAgentId = currentScript?.getAttribute('data-agent-id') || currentScript?.getAttribute('data-public-key') || '';
+  const rawApiUrl = (currentScript?.getAttribute('data-api-url') || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+
+  const state = {
+    agentId: rawAgentId,
+    publicKey: rawAgentId,
+    apiUrl: rawApiUrl,
+    title: currentScript?.getAttribute('data-title') || 'AI Assistant',
+    greeting: currentScript?.getAttribute('data-greeting') || 'Hello! 👋 How can I help you today?',
     primaryColor: currentScript?.getAttribute('data-primary-color') || '#6366f1',
     position: currentScript?.getAttribute('data-position') || 'bottom-right',
-    theme: currentScript?.getAttribute('data-theme') || 'liquid-glass',
+    placeholder: currentScript?.getAttribute('data-placeholder') || 'Ask a question...',
+    suggestedQuestions: [],
+    isOpen: false,
+    isStreaming: false,
+    messages: [],
+    visitorId: '',
+    conversationId: null,
   };
 
-  // Unique visitor ID for multi-turn session continuity
-  const STORAGE_KEY_VISITOR = 'rag_chat_visitor_id';
-  const STORAGE_KEY_CONV = `rag_chat_conv_${config.publicKey}`;
-  let visitorId = localStorage.getItem(STORAGE_KEY_VISITOR);
-  if (!visitorId) {
-    visitorId = 'vis_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
-    localStorage.setItem(STORAGE_KEY_VISITOR, visitorId);
+  // 2. Multi-Turn Session Management
+  const STORAGE_KEY_VISITOR = 'rag_widget_visitor_id';
+  const STORAGE_KEY_CONV = `rag_widget_conv_${state.agentId}`;
+
+  try {
+    let storedVisitor = localStorage.getItem(STORAGE_KEY_VISITOR);
+    if (!storedVisitor) {
+      storedVisitor = 'vis_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+      localStorage.setItem(STORAGE_KEY_VISITOR, storedVisitor);
+    }
+    state.visitorId = storedVisitor;
+    state.conversationId = localStorage.getItem(STORAGE_KEY_CONV) || null;
+  } catch (e) {
+    state.visitorId = 'vis_fallback_' + Date.now();
   }
 
-  let conversationId = localStorage.getItem(STORAGE_KEY_CONV) || null;
-  let isOpen = false;
-  let isTyping = false;
+  // 3. Create Host Element and Attach Open Shadow DOM
+  const host = document.createElement('div');
+  host.id = 'rag-widget-host';
+  host.style.position = 'fixed';
+  host.style.zIndex = '2147483647'; // Max z-index
+  host.style.bottom = '0';
+  host.style.right = state.position.includes('left') ? 'auto' : '0';
+  host.style.left = state.position.includes('left') ? '0' : 'auto';
+  host.style.pointerEvents = 'none';
 
-  // Preset suggested questions
-  const defaultSuggestions = [
-    'What is your return policy?',
-    'How much is express shipping?',
-    'Can I change my delivery address?',
-    'Do you ship internationally?'
-  ];
+  const shadow = host.attachShadow({ mode: 'open' });
 
-  // Inject Styles
-  const styleEl = document.createElement('style');
-  styleEl.textContent = `
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
-    #rag-liquid-widget-root {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 999999;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 12px;
-      pointer-events: none;
+  // 4. Encapsulated Shadow DOM Styles
+  const style = document.createElement('style');
+  style.textContent = `
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
 
-    #rag-liquid-widget-root * {
-      box-sizing: border-box;
+    :host {
+      --primary: ${state.primaryColor};
+      --primary-gradient: linear-gradient(135deg, ${state.primaryColor} 0%, #8b5cf6 50%, #06b6d4 100%);
+      --surface: #ffffff;
+      --surface-subtle: #f8fafc;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --shadow-lg: 0 20px 40px -15px rgba(0, 0, 0, 0.2), 0 0 1px 1px rgba(0,0,0,0.05);
+      --radius: 20px;
+    }
+
+    .widget-container {
+      position: fixed;
+      bottom: 24px;
+      ${state.position.includes('left') ? 'left: 24px;' : 'right: 24px;'}
+      display: flex;
+      flex-direction: column;
+      align-items: ${state.position.includes('left') ? 'flex-start' : 'flex-end'};
+      gap: 12px;
       pointer-events: auto;
     }
 
     /* Floating Launcher Button */
-    .rag-launcher-btn {
+    .launcher-btn {
       position: relative;
-      width: 58px;
-      height: 58px;
+      width: 60px;
+      height: 60px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
+      background: var(--primary-gradient);
       border: 1px solid rgba(255, 255, 255, 0.4);
-      box-shadow: 0 12px 32px rgba(99, 102, 241, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+      box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.6);
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -85,572 +116,608 @@
       outline: none;
     }
 
-    .rag-launcher-btn:hover {
+    .launcher-btn:hover {
       transform: scale(1.08) translateY(-2px);
-      box-shadow: 0 16px 40px rgba(99, 102, 241, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.8);
+      box-shadow: 0 14px 32px rgba(99, 102, 241, 0.55);
     }
 
-    .rag-launcher-btn:active {
+    .launcher-btn:active {
       transform: scale(0.95);
     }
 
-    .rag-launcher-pulse {
-      position: absolute;
-      inset: -4px;
-      border-radius: 50%;
-      background: inherit;
-      opacity: 0.35;
-      animation: rag-pulse-ring 2.8s cubic-bezier(0.24, 0, 0.38, 1) infinite;
-      z-index: -1;
-    }
-
-    @keyframes rag-pulse-ring {
-      0% { transform: scale(0.95); opacity: 0.5; }
-      50% { transform: scale(1.35); opacity: 0; }
-      100% { transform: scale(0.95); opacity: 0; }
-    }
-
-    .rag-launcher-tooltip {
-      position: absolute;
-      right: 70px;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      color: #ffffff;
-      padding: 7px 14px;
-      border-radius: 14px;
-      font-size: 12px;
-      font-weight: 600;
-      white-space: nowrap;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    .launcher-icon, .close-icon {
+      width: 28px;
+      height: 28px;
       transition: all 0.25s ease;
-      opacity: 1;
-      transform: translateY(0);
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
-    /* Liquid Glass Chat Panel */
-    .rag-chat-panel {
-      width: 380px;
-      height: 580px;
+    .close-icon {
+      display: none;
+    }
+
+    .is-open .launcher-icon {
+      display: none;
+    }
+
+    .is-open .close-icon {
+      display: block;
+    }
+
+    /* Notification Dot */
+    .unread-badge {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 14px;
+      height: 14px;
+      background: #10b981;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.8; }
+    }
+
+    /* Chat Drawer / Card */
+    .chat-drawer {
+      display: none;
+      position: relative;
+      width: 400px;
+      max-width: calc(100vw - 32px);
+      height: 600px;
       max-height: calc(100vh - 110px);
-      border-radius: 24px;
-      background: rgba(18, 20, 38, 0.72);
-      backdrop-filter: blur(28px) saturate(190%) contrast(105%);
-      -webkit-backdrop-filter: blur(28px) saturate(190%) contrast(105%);
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      box-shadow: 
-        0 24px 70px rgba(0, 0, 0, 0.5),
-        inset 0 1px 1px 0 rgba(255, 255, 255, 0.4),
-        0 0 30px rgba(99, 102, 241, 0.25);
-      display: flex;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
       flex-direction: column;
       overflow: hidden;
-      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
       transform-origin: bottom right;
-      opacity: 0;
-      transform: scale(0.9) translateY(20px);
-      pointer-events: none;
-      visibility: hidden;
+      animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .rag-chat-panel.rag-open {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-      pointer-events: auto;
-      visibility: visible;
+    .chat-drawer.open {
+      display: flex;
     }
 
-    /* Header */
-    .rag-chat-header {
-      padding: 16px 18px;
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.95) 0%, rgba(139, 92, 246, 0.9) 100%);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Chat Header */
+    .chat-header {
+      padding: 16px 20px;
+      background: var(--primary-gradient);
+      color: #ffffff;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      color: #ffffff;
-      flex-shrink: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     }
 
-    .rag-header-left {
+    .header-info {
       display: flex;
       align-items: center;
       gap: 12px;
     }
 
-    .rag-header-avatar {
+    .avatar {
       width: 36px;
       height: 36px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.25);
-      border: 1.5px solid rgba(255, 255, 255, 0.6);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(8px);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      font-size: 18px;
     }
 
-    .rag-header-info h4 {
-      margin: 0;
-      font-size: 14px;
+    .title-group h3 {
+      font-size: 15px;
       font-weight: 700;
-      letter-spacing: -0.01em;
+      line-height: 1.2;
     }
 
-    .rag-header-status {
+    .status-tag {
       display: flex;
       align-items: center;
       gap: 5px;
       font-size: 11px;
-      opacity: 0.85;
+      opacity: 0.9;
       margin-top: 2px;
     }
 
-    .rag-status-dot {
-      width: 6px;
-      height: 6px;
+    .status-dot {
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 8px #10b981;
-      animation: rag-blink 2s infinite;
+      background: #34d399;
     }
 
-    @keyframes rag-blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .rag-close-btn {
-      background: rgba(255, 255, 255, 0.15);
+    .icon-btn {
+      background: transparent;
       border: none;
-      width: 30px;
-      height: 30px;
-      border-radius: 10px;
-      color: #ffffff;
+      color: rgba(255, 255, 255, 0.85);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
+      transition: background 0.2s;
     }
 
-    .rag-close-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-      transform: scale(1.05);
+    .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
     }
 
-    /* Messages Scroll Area */
-    .rag-chat-messages {
+    /* Messages Container */
+    .messages-pane {
       flex: 1;
-      padding: 16px;
       overflow-y: auto;
+      padding: 16px 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
+      background: var(--surface-subtle);
       scroll-behavior: smooth;
     }
 
-    .rag-chat-messages::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    .rag-chat-messages::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 4px;
-    }
-
-    /* Message Bubbles */
-    .rag-msg {
+    .message {
       display: flex;
       flex-direction: column;
-      max-width: 84%;
-      animation: rag-fade-in 0.3s ease;
+      max-width: 86%;
+      gap: 4px;
     }
 
-    @keyframes rag-fade-in {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .rag-msg.rag-bot {
-      align-self: flex-start;
-    }
-
-    .rag-msg.rag-user {
+    .message.user {
       align-self: flex-end;
     }
 
-    .rag-bubble {
-      padding: 12px 15px;
-      border-radius: 18px;
-      font-size: 13px;
+    .message.assistant {
+      align-self: flex-start;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      font-size: 13.5px;
       line-height: 1.5;
+      border-radius: 16px;
       word-break: break-word;
     }
 
-    .rag-msg.rag-bot .rag-bubble {
-      background: rgba(255, 255, 255, 0.12);
-      color: #f1f5f9;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-bottom-left-radius: 4px;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-
-    .rag-msg.rag-user .rag-bubble {
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    .message.user .bubble {
+      background: var(--primary-gradient);
       color: #ffffff;
       border-bottom-right-radius: 4px;
-      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
     }
 
-    .rag-msg-time {
-      font-size: 10px;
-      opacity: 0.45;
-      margin-top: 4px;
-      padding: 0 4px;
+    .message.assistant .bubble {
+      background: #ffffff;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     }
 
-    .rag-msg.rag-user .rag-msg-time {
-      text-align: right;
-      color: #cbd5e1;
+    /* Source Citations */
+    .citations-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
     }
 
-    .rag-msg.rag-bot .rag-msg-time {
-      color: #94a3b8;
-    }
-
-    /* Source Citation Badges */
-    .rag-source-badge {
+    .citation-badge {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      margin-top: 6px;
       padding: 3px 8px;
-      border-radius: 8px;
-      background: rgba(99, 102, 241, 0.25);
-      border: 1px solid rgba(99, 102, 241, 0.4);
-      color: #a5b4fc;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
       font-size: 11px;
+      color: #334155;
+      text-decoration: none;
       font-weight: 500;
+      transition: all 0.2s;
     }
 
-    /* Suggestions / Quick Prompts */
-    .rag-suggestions {
+    .citation-badge:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+      border-color: #94a3b8;
+    }
+
+    /* Suggested Questions */
+    .suggestions-pane {
+      padding: 8px 16px 4px 16px;
       display: flex;
-      flex-direction: column;
+      flex-wrap: wrap;
       gap: 6px;
-      margin-top: 8px;
+      background: var(--surface-subtle);
     }
 
-    .rag-suggestion-btn {
-      text-align: left;
-      padding: 9px 13px;
+    .suggestion-chip {
+      padding: 6px 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: #e2e8f0;
       font-size: 12px;
-      font-weight: 500;
+      color: #475569;
       cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      transition: all 0.2s;
+      font-weight: 500;
     }
 
-    .rag-suggestion-btn:hover {
-      background: rgba(99, 102, 241, 0.25);
-      border-color: rgba(99, 102, 241, 0.5);
-      color: #ffffff;
-      transform: translateX(3px);
-    }
-
-    /* Typing Dots */
-    .rag-typing-bubble {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 12px 16px;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      width: fit-content;
-    }
-
-    .rag-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #a5b4fc;
-      animation: rag-dot-bounce 1.4s infinite ease-in-out both;
-    }
-
-    .rag-dot:nth-child(1) { animation-delay: -0.32s; }
-    .rag-dot:nth-child(2) { animation-delay: -0.16s; }
-
-    @keyframes rag-dot-bounce {
-      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-      40% { transform: scale(1.1); opacity: 1; }
+    .suggestion-chip:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      color: #0f172a;
+      transform: translateY(-1px);
     }
 
     /* Input Footer */
-    .rag-chat-footer {
-      padding: 12px 14px;
-      background: rgba(10, 12, 26, 0.4);
-      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    .input-footer {
+      padding: 12px 16px;
+      background: #ffffff;
+      border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
+      gap: 10px;
     }
 
-    .rag-input-box {
+    .chat-input {
       flex: 1;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      border-radius: 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
       padding: 10px 14px;
-      color: #ffffff;
-      font-size: 13px;
-      font-family: inherit;
+      font-size: 13.5px;
       outline: none;
-      transition: all 0.2s ease;
+      transition: border-color 0.2s;
+      background: #f8fafc;
+      color: var(--text-main);
     }
 
-    .rag-input-box::placeholder {
-      color: rgba(255, 255, 255, 0.4);
+    .chat-input:focus {
+      border-color: #6366f1;
+      background: #ffffff;
     }
 
-    .rag-input-box:focus {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: #818cf8;
-      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
-    }
-
-    .rag-send-btn {
+    .send-btn {
       width: 38px;
       height: 38px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      background: var(--primary-gradient);
+      border: none;
       color: #ffffff;
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      outline: none;
+      transition: transform 0.2s, opacity 0.2s;
     }
 
-    .rag-send-btn:hover:not(:disabled) {
+    .send-btn:hover:not(:disabled) {
       transform: scale(1.05);
-      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.5);
     }
 
-    .rag-send-btn:disabled {
-      opacity: 0.4;
+    .send-btn:disabled {
+      opacity: 0.5;
       cursor: not-allowed;
     }
 
-    @media (max-width: 480px) {
-      .rag-chat-panel {
-        width: calc(100vw - 32px);
-        right: 16px;
-        bottom: 84px;
-        height: calc(100vh - 120px);
-      }
-      #rag-liquid-widget-root {
-        right: 16px;
+    /* Typing Animation */
+    .typing-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 8px;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #94a3b8;
+      animation: blink 1.4s infinite both;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 640px) {
+      .widget-container {
         bottom: 16px;
+        right: 16px;
+        left: 16px;
+        align-items: flex-end;
+      }
+      .chat-drawer {
+        width: 100%;
+        height: calc(100vh - 90px);
+        max-height: none;
+        border-radius: 16px;
       }
     }
   `;
-  document.head.appendChild(styleEl);
 
-  // Render Widget DOM
-  const rootEl = document.createElement('div');
-  rootEl.id = 'rag-liquid-widget-root';
-  rootEl.innerHTML = `
-    <div class="rag-chat-panel" id="ragChatPanel">
-      <div class="rag-chat-header">
-        <div class="rag-header-left">
-          <div class="rag-header-avatar">✦</div>
-          <div class="rag-header-info">
-            <h4 id="ragBotTitle">${config.title}</h4>
-            <div class="rag-header-status">
-              <span class="rag-status-dot"></span>
-              <span>Grounded on Knowledge Base</span>
+  // 5. Build Widget DOM Tree
+  const container = document.createElement('div');
+  container.className = 'widget-container';
+
+  container.innerHTML = `
+    <div class="chat-drawer" id="chatDrawer">
+      <div class="chat-header">
+        <div class="header-info">
+          <div class="avatar">✨</div>
+          <div class="title-group">
+            <h3 id="botTitle">${state.title}</h3>
+            <div class="status-tag">
+              <span class="status-dot"></span>
+              <span>AI Support • Online</span>
             </div>
           </div>
         </div>
-        <button class="rag-close-btn" id="ragCloseBtn" title="Close">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-      </div>
-
-      <div class="rag-chat-messages" id="ragMessages">
-        <div class="rag-msg rag-bot">
-          <div class="rag-bubble">${config.greeting}</div>
-          <span class="rag-msg-time">Just now</span>
-        </div>
-
-        <div class="rag-suggestions" id="ragSuggestions">
-          ${defaultSuggestions.map(s => `
-            <button class="rag-suggestion-btn" onclick="window.__ragSendSuggestion('${s.replace(/'/g, "\\'")}')">
-              <span>${s}</span>
-              <span style="opacity:0.5;">→</span>
-            </button>
-          `).join('')}
+        <div class="header-actions">
+          <button class="icon-btn" id="clearBtn" title="Restart Conversation">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          </button>
+          <button class="icon-btn" id="closeDrawerBtn" title="Close">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       </div>
 
-      <div class="rag-chat-footer">
-        <input type="text" class="rag-input-box" id="ragInput" placeholder="Ask about policies, shipping, returns..." autocomplete="off" />
-        <button class="rag-send-btn" id="ragSendBtn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      <div class="messages-pane" id="messagesPane">
+        <div class="message assistant">
+          <div class="bubble" id="greetingBubble">${state.greeting}</div>
+        </div>
+      </div>
+
+      <div class="suggestions-pane" id="suggestionsPane"></div>
+
+      <div class="input-footer">
+        <input type="text" class="chat-input" id="chatInput" placeholder="${state.placeholder}" autocomplete="off" />
+        <button class="send-btn" id="sendBtn" title="Send Message">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
     </div>
 
-    <div style="position:relative; display:flex; align-items:center;">
-      <div class="rag-launcher-tooltip" id="ragTooltip">Ask Aria ✨</div>
-      <button class="rag-launcher-btn" id="ragLauncherBtn" aria-label="Open Chat">
-        <div class="rag-launcher-pulse"></div>
-        <svg id="ragIconOpen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
-        </svg>
-      </button>
-    </div>
+    <button class="launcher-btn" id="launcherBtn" aria-label="Open AI Chat">
+      <div class="unread-badge" id="unreadBadge"></div>
+      <svg class="launcher-icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <svg class="close-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   `;
-  document.body.appendChild(rootEl);
 
-  // DOM Elements
-  const panel = document.getElementById('ragChatPanel');
-  const launcherBtn = document.getElementById('ragLauncherBtn');
-  const closeBtn = document.getElementById('ragCloseBtn');
-  const tooltip = document.getElementById('ragTooltip');
-  const messagesContainer = document.getElementById('ragMessages');
-  const inputEl = document.getElementById('ragInput');
-  const sendBtn = document.getElementById('ragSendBtn');
-  const suggestionsBox = document.getElementById('ragSuggestions');
+  shadow.appendChild(style);
+  shadow.appendChild(container);
 
-  function toggleChat(openState) {
-    isOpen = typeof openState === 'boolean' ? openState : !isOpen;
-    if (isOpen) {
-      panel.classList.add('rag-open');
-      tooltip.style.opacity = '0';
-      setTimeout(() => inputEl.focus(), 250);
+  // 6. Append to document body when ready
+  function mount() {
+    if (!document.body) {
+      window.addEventListener('DOMContentLoaded', mount);
+      return;
+    }
+    document.body.appendChild(host);
+  }
+  mount();
+
+  // 7. Elements & State Binding
+  const launcherBtn = shadow.getElementById('launcherBtn');
+  const chatDrawer = shadow.getElementById('chatDrawer');
+  const closeDrawerBtn = shadow.getElementById('closeDrawerBtn');
+  const clearBtn = shadow.getElementById('clearBtn');
+  const messagesPane = shadow.getElementById('messagesPane');
+  const chatInput = shadow.getElementById('chatInput');
+  const sendBtn = shadow.getElementById('sendBtn');
+  const suggestionsPane = shadow.getElementById('suggestionsPane');
+  const unreadBadge = shadow.getElementById('unreadBadge');
+  const botTitle = shadow.getElementById('botTitle');
+  const greetingBubble = shadow.getElementById('greetingBubble');
+
+  function toggleWidget(force) {
+    state.isOpen = force !== undefined ? force : !state.isOpen;
+    if (state.isOpen) {
+      chatDrawer.classList.add('open');
+      launcherBtn.classList.add('is-open');
+      if (unreadBadge) unreadBadge.style.display = 'none';
+      setTimeout(() => chatInput.focus(), 150);
     } else {
-      panel.classList.remove('rag-open');
-      tooltip.style.opacity = '1';
+      chatDrawer.classList.remove('open');
+      launcherBtn.classList.remove('is-open');
     }
   }
 
-  launcherBtn.addEventListener('click', () => toggleChat());
-  closeBtn.addEventListener('click', () => toggleChat(false));
+  launcherBtn.addEventListener('click', () => toggleWidget());
+  closeDrawerBtn.addEventListener('click', () => toggleWidget(false));
 
-  function appendMessage(text, sender) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `rag-msg rag-${sender}`;
-
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    msgDiv.innerHTML = `
-      <div class="rag-bubble">${renderMarkdown(text)}</div>
-      <span class="rag-msg-time">${timeStr}</span>
-    `;
-
-    messagesContainer.appendChild(msgDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  }
-
-  function showTypingIndicator() {
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'rag-msg rag-bot';
-    typingDiv.id = 'ragTyping';
-    typingDiv.innerHTML = `
-      <div class="rag-typing-bubble">
-        <span class="rag-dot"></span>
-        <span class="rag-dot"></span>
-        <span class="rag-dot"></span>
+  clearBtn.addEventListener('click', () => {
+    state.conversationId = null;
+    try { localStorage.removeItem(STORAGE_KEY_CONV); } catch (e) {}
+    messagesPane.innerHTML = `
+      <div class="message assistant">
+        <div class="bubble">${state.greeting}</div>
       </div>
     `;
-    messagesContainer.appendChild(typingDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  }
+    renderSuggestions();
+  });
 
-  function removeTypingIndicator() {
-    const typingEl = document.getElementById('ragTyping');
-    if (typingEl) typingEl.remove();
-  }
-
-  async function handleSend(text) {
-    if (!text || !text.trim() || isTyping) return;
-    const query = text.trim();
-    inputEl.value = '';
-
-    // Hide initial suggestion chips
-    if (suggestionsBox) suggestionsBox.style.display = 'none';
-
-    // Append user message
-    appendMessage(query, 'user');
-
-    isTyping = true;
-    showTypingIndicator();
+  // 8. Fetch Public Agent Configuration & Bootstrap Crawl
+  async function loadPublicConfig() {
+    if (!state.agentId) return;
 
     try {
-      const endpoint = `${config.apiUrl}/api/v1/widget/${config.publicKey}/chat`;
-      const response = await fetch(endpoint, {
+      // Step A: Load public configuration
+      const configRes = await fetch(`${state.apiUrl}/api/v1/agents/${state.agentId}/public-config`);
+      if (configRes.ok) {
+        const data = await configRes.json();
+        state.title = data.bot_title || data.name || state.title;
+        state.greeting = data.greeting_message || state.greeting;
+        state.primaryColor = data.primary_color || state.primaryColor;
+        state.placeholder = data.placeholder_text || state.placeholder;
+        state.suggestedQuestions = data.suggested_questions || [];
+
+        botTitle.textContent = state.title;
+        greetingBubble.textContent = state.greeting;
+        chatInput.placeholder = state.placeholder;
+        renderSuggestions();
+      }
+
+      // Step B: Automatic initial crawl trigger
+      fetch(`${state.apiUrl}/api/v1/widget/bootstrap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: query,
-          visitor_id: visitorId,
-          conversation_id: conversationId,
+          agent_id: state.agentId,
+          public_key: state.publicKey,
+          current_site_origin: window.location.origin
+        })
+      }).catch(() => {});
+    } catch (e) {
+      console.warn('[RAG Widget] Config loaded with offline defaults:', e);
+      renderSuggestions();
+    }
+  }
+
+  function renderSuggestions() {
+    const list = state.suggestedQuestions.length ? state.suggestedQuestions : [
+      'What is your return policy?',
+      'How do I contact support?',
+      'Tell me about your services'
+    ];
+    suggestionsPane.innerHTML = '';
+    list.forEach(q => {
+      const chip = document.createElement('button');
+      chip.className = 'suggestion-chip';
+      chip.textContent = q;
+      chip.addEventListener('click', () => {
+        chatInput.value = q;
+        sendMessage();
+      });
+      suggestionsPane.appendChild(chip);
+    });
+  }
+
+  // 9. Markdown Formatter & Source Badge Generator
+  function formatMessageText(text) {
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.06);padding:2px 4px;border-radius:4px;font-size:12px;">$1</code>')
+      .replace(/\n/g, '<br/>');
+  }
+
+  function appendMessage(role, text, sources = []) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${role}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = formatMessageText(text);
+    msgDiv.appendChild(bubble);
+
+    if (sources && sources.length > 0) {
+      const citationsDiv = document.createElement('div');
+      citationsDiv.className = 'citations-container';
+      sources.forEach((src, idx) => {
+        const label = src.title || `Source ${idx + 1}`;
+        const url = src.source_url || '#';
+        const badge = document.createElement('a');
+        badge.className = 'citation-badge';
+        badge.href = url;
+        badge.target = '_blank';
+        badge.rel = 'noopener noreferrer';
+        badge.innerHTML = `📄 <span>${label}</span>`;
+        citationsDiv.appendChild(badge);
+      });
+      msgDiv.appendChild(citationsDiv);
+    }
+
+    messagesPane.appendChild(msgDiv);
+    messagesPane.scrollTop = messagesPane.scrollHeight;
+    return bubble;
+  }
+
+  // 10. Send Message with SSE Streaming Support
+  async function sendMessage() {
+    const text = chatInput.value.trim();
+    if (!text || state.isStreaming) return;
+
+    chatInput.value = '';
+    suggestionsPane.style.display = 'none';
+    appendMessage('user', text);
+
+    state.isStreaming = true;
+    sendBtn.disabled = true;
+
+    // Append assistant typing container
+    const assistantBubble = appendMessage('assistant', '');
+    assistantBubble.innerHTML = `
+      <div class="typing-dots">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+    `;
+
+    try {
+      const chatUrl = `${state.apiUrl}/api/v1/widget/${state.agentId}/chat`;
+      const response = await fetch(chatUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          visitor_id: state.visitorId,
+          conversation_id: state.conversationId,
           stream: true
         })
       });
 
-      removeTypingIndicator();
-
       if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
+        throw new Error(`HTTP ${response.status}`);
       }
 
-      // Check if SSE stream is returned
+      // Check if response is Server-Sent Events stream
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/event-stream') && response.body) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'rag-msg rag-bot';
-        const bubbleDiv = document.createElement('div');
-        bubbleDiv.className = 'rag-bubble';
-        const timeSpan = document.createElement('span');
-        timeSpan.className = 'rag-msg-time';
-        timeSpan.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        msgDiv.appendChild(bubbleDiv);
-        msgDiv.appendChild(timeSpan);
-        messagesContainer.appendChild(msgDiv);
-
-        let fullText = '';
-        let renderScheduled = false;
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
+        let accumulatedText = '';
+        let accumulatedSources = [];
+        assistantBubble.innerHTML = '';
+
         let buffer = '';
-
-        function scheduleRender() {
-          if (!renderScheduled) {
-            renderScheduled = true;
-            requestAnimationFrame(() => {
-              bubbleDiv.innerHTML = renderMarkdown(fullText);
-              messagesContainer.scrollTop = messagesContainer.scrollHeight;
-              renderScheduled = false;
-            });
-          }
-        }
-
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -659,124 +726,101 @@
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('data: ')) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.replace(/^data:\s*/, '').trim();
+              if (!dataStr) continue;
               try {
-                const data = JSON.parse(trimmed.slice(6));
-                if (data.event === 'meta' && data.conversation_id) {
-                  conversationId = data.conversation_id;
-                  localStorage.setItem(STORAGE_KEY_CONV, conversationId);
-                } else if (data.event === 'token' && data.token) {
-                  fullText += data.token;
-                  scheduleRender();
-                } else if (data.event === 'done') {
-                  bubbleDiv.innerHTML = renderMarkdown(fullText);
-                  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                const event = JSON.parse(dataStr);
+                if (event.event === 'token' && event.token) {
+                  accumulatedText += event.token;
+                  assistantBubble.innerHTML = formatMessageText(accumulatedText);
+                  messagesPane.scrollTop = messagesPane.scrollHeight;
+                } else if (event.event === 'done') {
+                  if (event.conversation_id) {
+                    state.conversationId = event.conversation_id;
+                    try { localStorage.setItem(STORAGE_KEY_CONV, event.conversation_id); } catch(e) {}
+                  }
+                  if (event.sources) {
+                    accumulatedSources = event.sources;
+                  }
                 }
-              } catch (e) {}
+              } catch (parseErr) {}
             }
           }
         }
-        bubbleDiv.innerHTML = renderMarkdown(fullText);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-      } else {
-        const data = await response.json();
-        if (data.conversation_id) {
-          conversationId = data.conversation_id;
-          localStorage.setItem(STORAGE_KEY_CONV, conversationId);
+
+        if (accumulatedSources.length > 0) {
+          const citationsDiv = document.createElement('div');
+          citationsDiv.className = 'citations-container';
+          accumulatedSources.forEach((src, idx) => {
+            const label = src.title || `Source ${idx + 1}`;
+            const url = src.source_url || '#';
+            const badge = document.createElement('a');
+            badge.className = 'citation-badge';
+            badge.href = url;
+            badge.target = '_blank';
+            badge.rel = 'noopener noreferrer';
+            badge.innerHTML = `📄 <span>${label}</span>`;
+            citationsDiv.appendChild(badge);
+          });
+          assistantBubble.parentElement.appendChild(citationsDiv);
         }
-        appendMessage(data.answer || "I'm sorry, I couldn't process that query.", 'bot');
+      } else {
+        // Non-streaming fallback
+        const result = await response.json();
+        assistantBubble.innerHTML = formatMessageText(result.answer);
+        if (result.conversation_id) {
+          state.conversationId = result.conversation_id;
+          try { localStorage.setItem(STORAGE_KEY_CONV, result.conversation_id); } catch(e) {}
+        }
+        if (result.sources && result.sources.length > 0) {
+          const citationsDiv = document.createElement('div');
+          citationsDiv.className = 'citations-container';
+          result.sources.forEach((src, idx) => {
+            const label = src.title || `Source ${idx + 1}`;
+            const url = src.source_url || '#';
+            const badge = document.createElement('a');
+            badge.className = 'citation-badge';
+            badge.href = url;
+            badge.target = '_blank';
+            badge.rel = 'noopener noreferrer';
+            badge.innerHTML = `📄 <span>${label}</span>`;
+            citationsDiv.appendChild(badge);
+          });
+          assistantBubble.parentElement.appendChild(citationsDiv);
+        }
       }
     } catch (err) {
-      console.error('[RAG Widget Error]', err);
-      removeTypingIndicator();
-      appendMessage(
-        "I'm currently unable to reach the knowledge base. Please make sure the backend server is running on http://127.0.0.1:8000.",
-        'bot'
-      );
+      console.error('[RAG Widget] Chat request failed:', err);
+      assistantBubble.innerHTML = `<span style="color:#ef4444;">Sorry, I encountered an error. Please try again.</span>`;
     } finally {
-      isTyping = false;
-      inputEl.focus();
+      state.isStreaming = false;
+      sendBtn.disabled = false;
+      messagesPane.scrollTop = messagesPane.scrollHeight;
     }
   }
 
-  sendBtn.addEventListener('click', () => handleSend(inputEl.value));
-  inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend(inputEl.value);
-    }
+  sendBtn.addEventListener('click', sendMessage);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendMessage();
   });
 
-  window.__ragSendSuggestion = function (text) {
-    handleSend(text);
+  // 11. Global JavaScript API for Host Applications
+  window.RagWidget = {
+    open: () => toggleWidget(true),
+    close: () => toggleWidget(false),
+    toggle: () => toggleWidget(),
+    sendMessage: (text) => {
+      toggleWidget(true);
+      chatInput.value = text;
+      sendMessage();
+    },
+    init: (customConfig) => {
+      Object.assign(state, customConfig);
+      loadPublicConfig();
+    }
   };
 
-  function renderMarkdown(str) {
-    if (!str) return '';
-    // 1. Escape HTML special characters
-    let out = str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    // 2. Bold: **text** or __text__
-    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-
-    // 3. Italic: *text* or _text_
-    out = out.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-    out = out.replace(/_([^_\n]+)_/g, '<em>$1</em>');
-
-    // 4. Inline code: `code`
-    out = out.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.15);padding:2px 5px;border-radius:4px;font-family:monospace;font-size:0.9em;">$1</code>');
-
-    // 5. Unordered / Ordered lists with numbers
-    out = out.replace(/^(\d+)\.\s+(.+)$/gm, '<div style="margin:4px 0 4px 10px;display:flex;gap:6px;"><span style="font-weight:600;opacity:0.9;">$1.</span><span>$2</span></div>');
-    out = out.replace(/^[-*•]\s+(.+)$/gm, '<div style="margin:4px 0 4px 10px;display:flex;gap:6px;"><span style="opacity:0.9;">•</span><span>$1</span></div>');
-
-    // 6. Line breaks and paragraphs
-    out = out.replace(/\n\n+/g, '<div style="height:8px;"></div>');
-    out = out.replace(/\n/g, '<br/>');
-
-    return out;
-  }
-
-  // Auto-bootstrap widget and signal origin for automatic initial crawl
-  const currentOrigin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
-  fetch(`${config.apiUrl}/api/v1/widget/bootstrap`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      agent_id: config.agentId || config.publicKey,
-      public_key: config.publicKey,
-      origin: currentOrigin
-    })
-  })
-    .then(r => r.ok ? r.json() : null)
-    .then(bootstrapData => {
-      if (bootstrapData) {
-        if (bootstrapData.bot_title) {
-          const titleEl = document.getElementById('ragBotTitle');
-          if (titleEl) titleEl.innerText = bootstrapData.bot_title;
-        }
-        if (bootstrapData.knowledge_status === 'processing') {
-          console.log('[RAG Chatbot] Knowledge base is indexing in the background.');
-        }
-      }
-    })
-    .catch(() => {
-      // Fallback to static config fetch if bootstrap is unavailable
-      fetch(`${config.apiUrl}/api/v1/widget/${config.publicKey}/config`)
-        .then(r => r.ok ? r.json() : null)
-        .then(remoteCfg => {
-          if (remoteCfg && remoteCfg.bot_title) {
-            const titleEl = document.getElementById('ragBotTitle');
-            if (titleEl) titleEl.innerText = remoteCfg.bot_title;
-          }
-        })
-        .catch(() => {});
-    });
-
-  console.log('[RAG Chatbot] Liquid Glass Widget loaded for public key:', config.publicKey);
+  // Trigger public config fetch
+  loadPublicConfig();
 })();
