@@ -23,7 +23,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Chatin — Build AI Agents that Understand, Engage & Improve",
+  title: "RagApp — Build AI Agents that Understand, Engage & Improve",
   description:
     "Create, embed and monitor AI agents that understand your business, take action through connected tools, and continuously identify where your knowledge is failing.",
   keywords: [
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     "Shopify AI",
     "Slack Integration",
   ],
-  authors: [{ name: "Chatin AI" }],
+  authors: [{ name: "RagApp AI" }],
 };
 
 export default function RootLayout({

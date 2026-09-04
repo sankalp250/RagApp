@@ -38,13 +38,61 @@ from backend.app.schemas.chat import (
     ChatRequest, ChatResponse, SourceChunk, ConversationHistoryResponse, MessageResponse
 )
 from backend.app.ai.rag_engine import (
-    retrieve_context, generate_answer, generate_answer_stream, save_retrieval_evidence
+    retrieve_context, generate_answer, generate_answer_stream, save_retrieval_evidence,
+    GUARDRAIL_REFUSAL_MESSAGE
 )
-from backend.app.ai.knowledge_gap import detect_knowledge_gap, record_knowledge_gap
+from backend.app.ai.knowledge_gap import (
+    detect_knowledge_gap, record_knowledge_gap, NO_KNOWLEDGE_PHRASES
+)
 from backend.app.workers.evaluation_jobs import run_evaluation_job
 from backend.app.core.cache import get_cached_chat, set_cached_chat, LRUTtlCache
 from backend.app.core.logging import logger
+import re
 from backend.app.core.exceptions import AgentNotFoundException, DomainException
+
+
+def _filter_grounded_sources(answer: str, source_chunks: List[Any]) -> List[Any]:
+    """
+    Deduplicates sources and filters out candidate chunks that were not actually
+    used in the generated answer, ensuring only truly cited sources appear in the UI.
+    """
+    if not source_chunks:
+        return []
+
+    # 1. Deduplicate by (source_url, title)
+    unique_candidates = []
+    seen = set()
+    for s in source_chunks:
+        title = getattr(s, "title", None) or (s.get("title") if isinstance(s, dict) else "")
+        url = getattr(s, "source_url", None) or (s.get("source_url") if isinstance(s, dict) else "")
+        key = (url or "", title or "")
+        if key not in seen:
+            seen.add(key)
+            unique_candidates.append(s)
+
+    if not unique_candidates:
+        return []
+
+    # 2. Check which candidates are grounded in the generated answer
+    ans_lower = answer.lower()
+    grounded = []
+
+    # Generic words to exclude from title matching
+    ignore_words = {"techstore", "official", "knowledge", "transfer", "specs", "features", "policy", "policies", "information", "about", "with", "from", "hours"}
+
+    for idx, s in enumerate(unique_candidates):
+        title = getattr(s, "title", None) or (s.get("title") if isinstance(s, dict) else "") or ""
+        # The #1 highest ranked chunk is always retained as the primary source anchor
+        if idx == 0:
+            grounded.append(s)
+            continue
+
+        # Extract topical words from title (e.g. "Pulse", "Smartwatch", "NovaPro", "Return", "Refund")
+        words = [w for w in re.findall(r"\b[a-zA-Z]{4,}\b", title.lower()) if w not in ignore_words]
+        if words and any(w in ans_lower for w in words):
+            grounded.append(s)
+
+    return grounded
 
 
 class ChatService:
@@ -259,19 +307,27 @@ class ChatService:
         # Step 9: Post-Turn Async Jobs (non-blocking)
         asyncio.create_task(run_evaluation_job(str(assistant_msg.id)))
 
+        # Do not attach source citations if model refused or admitted ignorance
+        is_refusal = (
+            answer.strip().lower().startswith(GUARDRAIL_REFUSAL_MESSAGE[:30].lower()) or
+            any(p in answer.lower() for p in NO_KNOWLEDGE_PHRASES) or
+            is_gap
+        )
+        effective_sources = [] if is_refusal else _filter_grounded_sources(answer, source_chunks)
+
         if not cached_resp and len(history) <= 1 and "technical difficulties" not in answer.lower() and len(answer) > 10:
             asyncio.create_task(set_cached_chat(
                 organization_id=organization_id,
                 agent_id=agent_id,
                 query=request.message,
-                response={"answer": answer, "sources": [s.model_dump() for s in source_chunks]}
+                response={"answer": answer, "sources": [s.model_dump() for s in effective_sources]}
             ))
 
         return ChatResponse(
             conversation_id=str(conv.id),
             message_id=str(assistant_msg.id),
             answer=answer,
-            sources=source_chunks,
+            sources=effective_sources,
             input_tokens=in_tok,
             output_tokens=out_tok,
             latency_ms=round(latency_ms, 2),
@@ -358,12 +414,12 @@ class ChatService:
 
         sources_payload = [s.model_dump() for s in source_chunks]
 
-        # Step 3: Send meta event immediately to client
+        # Step 3: Send meta event immediately to client (omit sources until LLM evaluates grounding)
         logger.info(f"[PERF] >>> META EVENT at {_elapsed():.0f}ms (pre-LLM)")
         yield {
             "event": "meta",
             "conversation_id": conv_id,
-            "sources": sources_payload
+            "sources": []
         }
 
         # Step 4: Native Token Streaming from LLM with ZERO DB Connections Held
@@ -453,18 +509,26 @@ class ChatService:
         if assistant_msg_id:
             asyncio.create_task(run_evaluation_job(assistant_msg_id))
 
+        # Do not attach source citations if model refused or admitted ignorance
+        is_refusal = (
+            full_answer.strip().lower().startswith(GUARDRAIL_REFUSAL_MESSAGE[:30].lower()) or
+            any(p in full_answer.lower() for p in NO_KNOWLEDGE_PHRASES) or
+            is_gap
+        )
+        effective_sources = [] if is_refusal else _filter_grounded_sources(full_answer, sources_payload)
+
         if len(history) <= 1 and "technical difficulties" not in full_answer.lower() and len(full_answer) > 10:
             asyncio.create_task(set_cached_chat(
                 organization_id=organization_id,
                 agent_id=agent_id,
                 query=request.message,
-                response={"answer": full_answer, "sources": sources_payload}
+                response={"answer": full_answer, "sources": effective_sources}
             ))
 
-        # Step 7: Yield done event with sources
+        # Step 7: Yield done event with verified sources
         yield {
             "event": "done",
-            "sources": sources_payload,
+            "sources": effective_sources,
             "knowledge_gap_detected": is_gap
         }
 

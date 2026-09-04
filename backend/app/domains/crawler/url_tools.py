@@ -39,25 +39,40 @@ from backend.app.core.logging import logger
 # Constants
 # ---------------------------------------------------------------------------
 
-PRIVATE_NETWORKS = [
+LOOPBACK_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),      # loopback
-    ipaddress.ip_network("10.0.0.0/8"),       # private A
-    ipaddress.ip_network("172.16.0.0/12"),    # private B
-    ipaddress.ip_network("192.168.0.0/16"),   # private C
-    ipaddress.ip_network("169.254.0.0/16"),   # link-local / AWS metadata
-    ipaddress.ip_network("100.64.0.0/10"),    # shared address space (RFC 6598)
     ipaddress.ip_network("::1/128"),          # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),         # IPv6 unique local
-    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
 ]
 
-PRIVATE_HOSTNAMES = frozenset({
+LOOPBACK_HOSTNAMES = frozenset({
     "localhost",
     "0.0.0.0",
+    "127.0.0.1",
+    "::1",
+})
+
+CLOUD_METADATA_HOSTNAMES = frozenset({
     "metadata.google.internal",
     "169.254.169.254",    # AWS/GCP instance metadata
     "instance-data",
 })
+
+LINK_LOCAL_NETWORKS = [
+    ipaddress.ip_network("169.254.0.0/16"),   # link-local / AWS metadata
+]
+
+PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),       # private A
+    ipaddress.ip_network("172.16.0.0/12"),    # private B
+    ipaddress.ip_network("192.168.0.0/16"),   # private C
+    ipaddress.ip_network("100.64.0.0/10"),    # shared address space (RFC 6598)
+    ipaddress.ip_network("fc00::/7"),         # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
+]
+
+ALL_PRIVATE_NETWORKS = LOOPBACK_NETWORKS + LINK_LOCAL_NETWORKS + PRIVATE_NETWORKS
+ALL_BLOCKED_HOSTNAMES = LOOPBACK_HOSTNAMES | CLOUD_METADATA_HOSTNAMES
+PRIVATE_HOSTNAMES = ALL_BLOCKED_HOSTNAMES
 
 BLOCKED_SCHEMES = frozenset({"ftp", "file", "javascript", "data", "blob"})
 
@@ -113,12 +128,15 @@ TRACKING_PARAMS = frozenset({
 # SSRF Prevention
 # ---------------------------------------------------------------------------
 
-def is_safe_ssrf_url(url: str) -> bool:
+def is_safe_ssrf_url(url: str, allow_local: bool = False) -> bool:
     """
     Returns True ONLY if the URL is safe to crawl from the server side:
     - Scheme is http or https.
-    - Host does not resolve to a private/loopback/link-local IP address.
+    - Host does not resolve to a private/link-local/metadata IP address.
     - Host is not in the hardcoded block list.
+    - When allow_local=False (default), loopback (localhost, 127.0.0.1) is blocked.
+    - When allow_local=True, loopback is allowed (for local testing/embeds),
+      but cloud metadata endpoints remain strictly blocked.
 
     Performs an actual DNS resolution to catch DNS rebinding-style attacks.
     """
@@ -133,17 +151,30 @@ def is_safe_ssrf_url(url: str) -> bool:
             return False
 
         # 2. Hostname block list
-        if host in PRIVATE_HOSTNAMES:
-            logger.warning(f"SSRF blocked (blocked hostname {host!r}): {url}")
+        if host in CLOUD_METADATA_HOSTNAMES:
+            logger.warning(f"SSRF blocked (cloud metadata hostname {host!r}): {url}")
+            return False
+
+        if not allow_local and host in LOOPBACK_HOSTNAMES:
+            logger.warning(f"SSRF blocked (loopback hostname {host!r}): {url}")
             return False
 
         # 3. IPv4/IPv6 literal addresses
         try:
             ip = ipaddress.ip_address(host)
+            for network in LINK_LOCAL_NETWORKS:
+                if ip in network:
+                    logger.warning(f"SSRF blocked (link-local IP {ip}): {url}")
+                    return False
             for network in PRIVATE_NETWORKS:
                 if ip in network:
                     logger.warning(f"SSRF blocked (private IP {ip}): {url}")
                     return False
+            if not allow_local:
+                for network in LOOPBACK_NETWORKS:
+                    if ip in network:
+                        logger.warning(f"SSRF blocked (loopback IP {ip}): {url}")
+                        return False
             return True
         except ValueError:
             pass  # Not an IP literal — continue to DNS resolution
@@ -160,12 +191,25 @@ def is_safe_ssrf_url(url: str) -> bool:
             ip_str = sockaddr[0]
             try:
                 ip = ipaddress.ip_address(ip_str)
+                for network in LINK_LOCAL_NETWORKS:
+                    if ip in network:
+                        logger.warning(
+                            f"SSRF blocked (DNS resolves to link-local IP {ip} for {host!r}): {url}"
+                        )
+                        return False
                 for network in PRIVATE_NETWORKS:
                     if ip in network:
                         logger.warning(
                             f"SSRF blocked (DNS resolves to private IP {ip} for {host!r}): {url}"
                         )
                         return False
+                if not allow_local:
+                    for network in LOOPBACK_NETWORKS:
+                        if ip in network:
+                            logger.warning(
+                                f"SSRF blocked (DNS resolves to loopback IP {ip} for {host!r}): {url}"
+                            )
+                            return False
             except ValueError:
                 pass
 
@@ -317,14 +361,23 @@ def is_valid_crawl_url(
     root_url: str,
     allow_subdomains: bool = False,
     allow_restricted_paths: bool = False,
+    allow_local: Optional[bool] = None,
 ) -> bool:
     """
     Aggregate check: safe SSRF + same domain + not restricted.
     Use this as the final gate before adding a URL to the frontier.
+
+    When allow_local is None, it is automatically enabled if the crawl's root_url
+    is on a loopback host (localhost / 127.0.0.1 / ::1 / 0.0.0.0).
     """
     if not url or not url.startswith(("http://", "https://")):
         return False
-    if not is_safe_ssrf_url(url):
+
+    if allow_local is None:
+        root_host = extract_root_domain(root_url)
+        allow_local = bool(root_host and root_host in LOOPBACK_HOSTNAMES)
+
+    if not is_safe_ssrf_url(url, allow_local=allow_local):
         return False
     if not is_same_domain(url, root_url, allow_subdomains):
         return False

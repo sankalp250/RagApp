@@ -131,7 +131,7 @@ export function ScrollStory() {
         <div className="text-center max-w-3xl mx-auto mb-12">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-indigo-100 shadow-xs text-xs font-bold text-indigo-600 mb-4">
             <Layers className="w-3.5 h-3.5 text-indigo-500" />
-            <span>HOW CHATIN POWERS YOUR BUSINESS (AUTO-PLAYING)</span>
+            <span>HOW RAGAPP POWERS YOUR BUSINESS (AUTO-PLAYING)</span>
           </div>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 font-display">
             The Complete AI Agent Lifecycle in{" "}

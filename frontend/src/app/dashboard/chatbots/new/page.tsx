@@ -554,7 +554,8 @@ function ChatbotStudioContent() {
             suggested_questions: config.modules.quickPrompts,
             confidence_threshold: config.behavior.ragConfidenceThreshold,
             fallback_message: config.behavior.fallbackMessage,
-            model: config.behavior.model || "gemini-2.5-flash"
+            model: config.behavior.model || "gemini-2.5-flash",
+            auto_crawl_enabled: config.behavior.autoCrawlEnabled !== false
           },
         }),
       });
@@ -563,7 +564,7 @@ function ChatbotStudioContent() {
     setIsSaving(false);
   };
 
-  const embedCode = `<script src="https://cdn.chatin.ai/widget.js" data-agent-id="${config.id}" async></script>`;
+  const embedCode = `<script src="http://127.0.0.1:8000/widget.js" data-agent-id="${config.id}" async></script>`;
 
   const handleCopyEmbed = () => {
     navigator.clipboard.writeText(embedCode);
@@ -936,6 +937,19 @@ function ChatbotStudioContent() {
               value={Math.round(config.behavior.ragConfidenceThreshold * 100)}
               min={40} max={100} unit="%" step={5}
               onChange={(v) => updateBehavior("ragConfidenceThreshold", v / 100)} />
+            <div className="flex flex-col gap-3 pt-2">
+              <p className="text-xs font-semibold text-slate-300">Knowledge & Scraping</p>
+              <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-white/8 bg-white/4">
+                <ToggleRow
+                  label="Auto-Crawl Website on Embed"
+                  value={config.behavior.autoCrawlEnabled !== false}
+                  onChange={(v) => updateBehavior("autoCrawlEnabled", v)}
+                />
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Automatically scrapes and indexes site pages when widget is embedded. Turn OFF to only use uploaded documents.
+                </p>
+              </div>
+            </div>
             <div className="flex flex-col gap-3 pt-2">
               <p className="text-xs font-semibold text-slate-300">Integrations</p>
               <ToggleRow label="Shopify Tool" value={config.behavior.enableShopifyTool} onChange={(v) => updateBehavior("enableShopifyTool", v)} />

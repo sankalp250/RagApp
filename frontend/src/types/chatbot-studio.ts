@@ -233,6 +233,7 @@ export interface ChatbotThemeConfig {
     enableSlackEscalation: boolean;
     enableEmailReceipts: boolean;
     enableCustomWebhooks: boolean;
+    autoCrawlEnabled?: boolean;
     knowledgeBaseId?: string;
   };
 }

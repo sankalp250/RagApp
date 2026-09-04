@@ -10,7 +10,7 @@ export function EmbedWidget() {
   const [copied, setCopied] = useState(false);
 
   const codeSnippet = `<script
-  src="https://cdn.chatin.ai/widget.js"
+  src="http://127.0.0.1:8000/widget.js"
   data-agent-id="agent_9842fae"
   data-theme="light"
   data-position="bottom-right"

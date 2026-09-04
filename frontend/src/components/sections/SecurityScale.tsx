@@ -40,7 +40,7 @@ export function SecurityScale() {
         badge="ENTERPRISE SECURITY & INFRASTRUCTURE"
         title="Engineered for Strict Security and"
         highlightText="Mission-Critical Scale"
-        description="From high-concurrency retail flash sales to strict HIPAA/GDPR data governance, Chatin provides production-hardened reliability."
+        description="From high-concurrency retail flash sales to strict HIPAA/GDPR data governance, RagApp provides production-hardened reliability."
       />
 
       <motion.div

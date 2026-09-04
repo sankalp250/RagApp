@@ -390,14 +390,31 @@ class CrawlerService:
         placeholder_text = config.get("placeholder_text", "Ask a question...")
         suggested_questions = config.get("suggested_questions", [])
 
+        # Check if website auto-scraping is disabled by configuration
+        auto_crawl_enabled = config.get("auto_crawl_enabled", True)
+        if not auto_crawl_enabled:
+            return WidgetBootstrapResponse(
+                agent_id=str(agent.id),
+                public_key=agent.public_key,
+                widget_ready=True,
+                knowledge_status="ready",
+                crawl_triggered=False,
+                bot_title=bot_title,
+                greeting_message=greeting_message,
+                primary_color=primary_color,
+                placeholder_text=placeholder_text,
+                suggested_questions=suggested_questions,
+                message="Website scraping disabled by agent configuration. Running in documents-only mode."
+            )
+
         # 2. Normalize incoming origin
-        raw_origin = (payload.origin or "").strip()
+        raw_origin = (payload.origin or getattr(payload, "current_site_origin", None) or "").strip()
         if not raw_origin.startswith(("http://", "https://")):
             raw_origin = f"https://{raw_origin}"
 
         parsed_origin = urlparse(raw_origin)
         origin_host = (parsed_origin.hostname or "").lower()
-        if not origin_host:
+        if not origin_host and raw_origin not in ("https://", "http://"):
             return WidgetBootstrapResponse(
                 agent_id=str(agent.id),
                 public_key=agent.public_key,
@@ -420,23 +437,39 @@ class CrawlerService:
         res_sources = await db.execute(stmt_sources)
         sources = res_sources.scalars().all()
 
+        origin_netloc = (parsed_origin.netloc or "").lower()
         matched_source: Optional[KnowledgeSource] = None
         for s in sources:
             if not s.url:
                 continue
-            s_host = (urlparse(s.url).hostname or "").lower()
+            s_parsed = urlparse(s.url)
+            s_netloc = (s_parsed.netloc or "").lower()
+            s_host = (s_parsed.hostname or "").lower()
             include_subs = s.config.get("include_subdomains", False) if s.config else False
-            if origin_host == s_host or (include_subs and origin_host.endswith(f".{s_host}")):
+            if origin_netloc == s_netloc or origin_host == s_host or (include_subs and origin_host.endswith(f".{s_host}")):
                 matched_source = s
+                # Ensure existing source has the correct netloc (including port if present)
+                target_url = f"{parsed_origin.scheme}://{parsed_origin.netloc}"
+                if parsed_origin.port and s.url != target_url:
+                    s.url = target_url
+                    await db.commit()
                 break
 
         # Check agent configuration allowed_domains if no source matched
         if not matched_source:
             allowed_domains = config.get("allowed_domains", [])
             domain_allowed = False
+
+            # Auto-allow local development and loopback origins
+            if origin_host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "") or not origin_host:
+                domain_allowed = True
+
             for d in allowed_domains:
                 d_clean = d.strip().lower().replace("https://", "").replace("http://", "").rstrip("/")
-                if d_clean.startswith("*."):
+                if d_clean in ("*", "*.*"):
+                    domain_allowed = True
+                    break
+                elif d_clean.startswith("*."):
                     root = d_clean[2:]
                     if origin_host == root or origin_host.endswith(f".{root}"):
                         domain_allowed = True
@@ -452,7 +485,7 @@ class CrawlerService:
                     agent_id=agent.id,
                     type="WEBSITE",
                     name=f"{origin_host} Website",
-                    url=f"{parsed_origin.scheme}://{origin_host}",
+                    url=f"{parsed_origin.scheme}://{parsed_origin.netloc}",
                     status="ACTIVE",
                     config={"max_depth": 2, "max_pages": 50, "include_subdomains": False}
                 )

@@ -16,7 +16,7 @@ export function Footer() {
                 <Bot className="w-5 h-5" />
               </div>
               <span className="font-bold text-xl tracking-tight text-slate-900 font-display">
-                Chatin
+                RagApp
               </span>
             </Link>
             <p className="text-sm text-slate-500 max-w-sm leading-relaxed mb-6">
@@ -167,7 +167,7 @@ export function Footer() {
 
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>© {new Date().getFullYear()} Chatin AI, Inc. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} RagApp AI, Inc. All rights reserved.</p>
           <div className="flex items-center gap-6">
             <a href="#security" className="hover:text-slate-900 transition-colors">
               Terms of Service

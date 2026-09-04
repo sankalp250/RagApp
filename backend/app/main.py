@@ -182,6 +182,7 @@ async def serve_widget_js():
     alt_path = os.path.join(os.getcwd(), "frontend", "public", "widget.js")
     return FileResponse(alt_path, media_type="application/javascript")
 
+@app.get("/", include_in_schema=False)
 @app.get("/demo", include_in_schema=False)
 @app.get("/test", include_in_schema=False)
 async def serve_demo_html():

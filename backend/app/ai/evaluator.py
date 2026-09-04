@@ -51,6 +51,9 @@ _UNGROUNDED_PHRASES = [
     "unable to find",
     "outside my knowledge",
     "i have no information",
+    "i can only assist with questions regarding",
+    "only assist with questions",
+    "outside the scope",
 ]
 
 # Strong grounding signals — model cites sources or refers to context

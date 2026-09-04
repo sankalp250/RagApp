@@ -142,7 +142,7 @@ export function HowItWorks() {
           </div>
 
           <div className="md:col-span-4 text-slate-600 text-sm sm:text-base leading-relaxed text-center md:text-left">
-            Chatin&apos;s intelligent algorithms analyze customer queries in real-time, providing immediate contextual answers and continuous knowledge refinement.
+            RagApp&apos;s intelligent algorithms analyze customer queries in real-time, providing immediate contextual answers and continuous knowledge refinement.
           </div>
         </motion.div>
 

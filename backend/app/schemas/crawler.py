@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 class CreateWebsiteSourceRequest(BaseModel):
@@ -151,10 +151,21 @@ class CrawlRunsListResponse(BaseModel):
 
 
 class WidgetBootstrapRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     agent_id: Optional[str] = Field(None, description="Agent UUID or public key")
     public_key: Optional[str] = Field(None, description="Agent public key")
-    origin: str = Field(..., description="Browser window.location.origin (e.g. https://example.com)")
+    origin: Optional[str] = Field(None, description="Browser window.location.origin (e.g. https://example.com)")
+    current_site_origin: Optional[str] = Field(None, description="Alias for origin used by embed widget.js")
     force_retry: Optional[bool] = Field(False, description="Explicit request to retry a failed crawl")
+
+    @model_validator(mode="after")
+    def resolve_origin(self) -> "WidgetBootstrapRequest":
+        if not self.origin and self.current_site_origin:
+            self.origin = self.current_site_origin
+        if not self.origin:
+            self.origin = "http://localhost"
+        return self
 
 
 class WidgetBootstrapResponse(BaseModel):

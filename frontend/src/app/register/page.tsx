@@ -65,7 +65,7 @@ function RegisterForm() {
               <Bot className="w-6 h-6" />
             </div>
             <span className="font-bold text-2xl tracking-tight text-slate-900 font-display">
-              Chatin
+              RagApp
             </span>
           </Link>
           <h2 className="text-xl font-bold text-slate-900">Sign Up (One-Time Setup)</h2>

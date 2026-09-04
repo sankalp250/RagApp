@@ -154,7 +154,7 @@ export function HeroFloatingWidget() {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h4 className="text-sm font-bold text-white">Chatin Assistant</h4>
+              <h4 className="text-sm font-bold text-white">RagApp Assistant</h4>
               <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
             </div>
             <p className="text-[11px] text-white/80 flex items-center gap-1">

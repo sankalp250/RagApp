@@ -91,7 +91,7 @@ export function AnalyticsShowcase() {
           </div>
 
           <div className="pt-6 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Aggregated across 128,430 conversations</span>
+            <span>Aggregated across live conversations</span>
             <span className="text-indigo-600 font-bold flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5" /> Auto-Categorized
             </span>

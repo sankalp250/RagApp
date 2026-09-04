@@ -165,7 +165,7 @@ export function CustomizerSection() {
                   {selectedAvatar.emoji}
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-white">Acme Assistant</h4>
+                  <h4 className="font-bold text-sm text-white">RagApp Assistant</h4>
                   <p className="text-[11px] text-white/80">Active · Auto-Theme Live</p>
                 </div>
               </div>

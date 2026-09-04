@@ -12,11 +12,12 @@ import {
   Copy,
   Check,
 } from "lucide-react";
-import { authStorage } from "@/lib/api";
+import { api, authStorage } from "@/lib/api";
 
 export default function SettingsPage() {
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [usage, setUsage] = useState<{ conversations_count: number; chunks_count: number } | null>(null);
 
   useEffect(() => {
     const token = authStorage.getToken();
@@ -26,6 +27,14 @@ export default function SettingsPage() {
     } else if (user?.organization_id) {
       setApiKey(`org_token_${user.organization_id}`);
     }
+
+    async function loadUsage() {
+      try {
+        const data = await api.get<{ conversations_count: number; chunks_count: number }>("/analytics/overview");
+        setUsage(data);
+      } catch {}
+    }
+    loadUsage();
   }, []);
 
   return (
@@ -60,11 +69,15 @@ export default function SettingsPage() {
         <div className="grid grid-cols-3 gap-4 text-xs font-medium pt-2">
           <div>
             <span className="text-slate-400 block text-[10px] uppercase font-bold">Monthly Usage</span>
-            <span className="text-sm font-bold text-slate-900">128,430 / Unlimited</span>
+            <span className="text-sm font-bold text-slate-900">
+              {(usage?.conversations_count ?? 0).toLocaleString()} / Unlimited
+            </span>
           </div>
           <div>
             <span className="text-slate-400 block text-[10px] uppercase font-bold">Vector Chunks</span>
-            <span className="text-sm font-bold text-slate-900">2,438 / 500,000</span>
+            <span className="text-sm font-bold text-slate-900">
+              {(usage?.chunks_count ?? 0).toLocaleString()} / 500,000
+            </span>
           </div>
           <div>
             <span className="text-slate-400 block text-[10px] uppercase font-bold">SLA Guarantee</span>

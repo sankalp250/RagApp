@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ╔══════════════════════════════════════════════════════════════════════════╗
  * ║  Universal Production AI Chatbot Widget (Shadow DOM Encapsulated)        ║
  * ║  Multi-Platform: HTML, React, Next.js, Vue, Shopify                      ║
@@ -597,6 +597,7 @@
         body: JSON.stringify({
           agent_id: state.agentId,
           public_key: state.publicKey,
+          origin: window.location.origin,
           current_site_origin: window.location.origin
         })
       }).catch(() => {});
@@ -749,12 +750,24 @@
           }
         }
 
-        if (accumulatedSources.length > 0) {
+        function renderCitationsList(sourcesList) {
+          if (!sourcesList || sourcesList.length === 0) return;
+          const seen = new Set();
+          const unique = [];
+          for (const s of sourcesList) {
+            const key = (s.source_url || s.url || '') + '|' + (s.title || '');
+            if (!seen.has(key)) {
+              seen.add(key);
+              unique.push(s);
+            }
+          }
+          if (unique.length === 0) return;
+
           const citationsDiv = document.createElement('div');
           citationsDiv.className = 'citations-container';
-          accumulatedSources.forEach((src, idx) => {
+          unique.forEach((src, idx) => {
             const label = src.title || `Source ${idx + 1}`;
-            const url = src.source_url || '#';
+            const url = src.source_url || src.url || '#';
             const badge = document.createElement('a');
             badge.className = 'citation-badge';
             badge.href = url;
@@ -765,6 +778,8 @@
           });
           assistantBubble.parentElement.appendChild(citationsDiv);
         }
+
+        renderCitationsList(accumulatedSources);
       } else {
         // Non-streaming fallback
         const result = await response.json();
@@ -773,22 +788,7 @@
           state.conversationId = result.conversation_id;
           try { localStorage.setItem(STORAGE_KEY_CONV, result.conversation_id); } catch(e) {}
         }
-        if (result.sources && result.sources.length > 0) {
-          const citationsDiv = document.createElement('div');
-          citationsDiv.className = 'citations-container';
-          result.sources.forEach((src, idx) => {
-            const label = src.title || `Source ${idx + 1}`;
-            const url = src.source_url || '#';
-            const badge = document.createElement('a');
-            badge.className = 'citation-badge';
-            badge.href = url;
-            badge.target = '_blank';
-            badge.rel = 'noopener noreferrer';
-            badge.innerHTML = `📄 <span>${label}</span>`;
-            citationsDiv.appendChild(badge);
-          });
-          assistantBubble.parentElement.appendChild(citationsDiv);
-        }
+        renderCitationsList(result.sources);
       }
     } catch (err) {
       console.error('[RAG Widget] Chat request failed:', err);

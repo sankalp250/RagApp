@@ -59,7 +59,7 @@ export function HeroDashboard() {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-slate-900 text-base sm:text-lg">
-                Acme Enterprise Agent
+                RagApp Enterprise Agent
               </h3>
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />

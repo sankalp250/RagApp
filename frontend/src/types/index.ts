@@ -33,7 +33,7 @@ export interface IntegrationItem {
   category: "E-Commerce" | "Communication" | "Helpdesk" | "Documents" | "Custom";
   icon: string;
   description: string;
-  status: "Connected" | "Available" | "Popular";
+  status: "Connected" | "Available" | "Popular" | "Coming Soon";
   actionType: string;
 }
 

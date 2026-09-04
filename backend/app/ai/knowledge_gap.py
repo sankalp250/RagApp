@@ -112,6 +112,9 @@ NO_KNOWLEDGE_PHRASES = [
     "i have no information",
     "unable to find",
     "no data available",
+    "i can only assist with questions regarding",
+    "only assist with questions",
+    "outside the scope",
 ]
 
 
@@ -126,7 +129,8 @@ def detect_knowledge_gap(
         return True, "NO_RELEVANT_DOCUMENTS"
 
     max_score = max((c.similarity_score for c in source_chunks), default=0.0)
-    if max_score < similarity_threshold:
+    effective_thresh = 0.012 if max_score <= 0.05 else similarity_threshold
+    if max_score < effective_thresh:
         return True, "LOW_CONFIDENCE_RETRIEVAL"
 
     answer_lower = answer.lower() if answer else ""

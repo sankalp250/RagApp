@@ -33,7 +33,7 @@ export function ContinuousLoop() {
         badge="CONTINUOUS EVALUATION LOOP (AUTO-PULSING)"
         title="Your Knowledge Health Improves with"
         highlightText="Every Interaction"
-        description="Traditional chatbots decay over time as your product evolves. Chatin continuously evaluates responses, detects out-of-date documentation, and prompts your team with high-impact fixes."
+        description="Traditional chatbots decay over time as your product evolves. RagApp continuously evaluates responses, detects out-of-date documentation, and prompts your team with high-impact fixes."
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">

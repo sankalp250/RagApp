@@ -147,7 +147,7 @@ export default function DashboardLayout({
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-xl tracking-tight text-slate-900 font-display">
-                  Chatin
+                  RagApp
                 </span>
                 <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 text-[10px] font-bold text-indigo-600 border border-indigo-200">
                   STUDIO

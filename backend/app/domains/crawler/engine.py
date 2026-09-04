@@ -140,6 +140,9 @@ class WebsiteCrawler:
         self.exclude_patterns: list = config.get("exclude_patterns", [])
 
         self.stats = _CrawlStats()
+        from backend.app.domains.crawler.url_tools import extract_root_domain, LOOPBACK_HOSTNAMES
+        root_host = extract_root_domain(self.root_url)
+        self.is_local_crawl = bool(root_host and root_host in LOOPBACK_HOSTNAMES)
         self._visited_urls: Set[str] = set()
         self._discovered_urls_this_run: Set[str] = set()
         self._active_urls_before: Set[str] = set()
@@ -196,7 +199,7 @@ class WebsiteCrawler:
                 if location:
                     from backend.app.domains.crawler.url_tools import is_safe_url
                     full_redirect_url = str(response.url.join(location))
-                    if not is_safe_url(full_redirect_url):
+                    if not is_safe_url(full_redirect_url, allow_local=self.is_local_crawl):
                         logger.warning(f"[SSRF Protection] Blocked dangerous redirect to: {full_redirect_url}")
                         raise httpx.RequestError(f"Blocked SSRF redirect destination: {full_redirect_url}", request=response.request)
 
@@ -346,7 +349,7 @@ class WebsiteCrawler:
             canonical = extraction.canonical_url
             if canonical:
                 norm_canonical = normalize_url(canonical)
-                if norm_canonical and is_valid_crawl_url(norm_canonical, self.root_url, self.allow_subdomains):
+                if norm_canonical and is_valid_crawl_url(norm_canonical, self.root_url, self.allow_subdomains, allow_local=self.is_local_crawl):
                     url = norm_canonical
                     self._discovered_urls_this_run.add(url)
 
@@ -706,7 +709,7 @@ class WebsiteCrawler:
             return
         if norm in self._visited_urls:
             return
-        if not is_valid_crawl_url(norm, self.root_url, self.allow_subdomains):
+        if not is_valid_crawl_url(norm, self.root_url, self.allow_subdomains, allow_local=self.is_local_crawl):
             return
 
         # Exclude URL-level patterns

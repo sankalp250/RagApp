@@ -19,7 +19,7 @@ export function FAQSection() {
       <SectionHeading
         badge="FREQUENTLY ASKED QUESTIONS"
         title="Everything You Need to"
-        highlightText="Know About Chatin"
+        highlightText="Know About RagApp"
         description="Got questions about setup, crawling, knowledge gap intelligence, or custom integrations? We've got answers."
       />
 

@@ -53,7 +53,7 @@ export function Navbar() {
           </div>
           <div className="flex items-center gap-1.5">
             <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 font-display">
-              Chatin
+              RagApp
             </span>
             <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-indigo-50 text-[10px] font-bold text-indigo-600 uppercase tracking-wider border border-indigo-200/60">
               AI
