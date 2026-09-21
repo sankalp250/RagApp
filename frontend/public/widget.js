@@ -36,9 +36,11 @@
     conversationId: null,
   };
 
-  // 2. Multi-Turn Session Management
+  // 2. Multi-Turn Session & Local Storage State Management
   const STORAGE_KEY_VISITOR = 'rag_widget_visitor_id';
   const STORAGE_KEY_CONV = `rag_widget_conv_${state.agentId}`;
+  const STORAGE_KEY_HISTORY = `rag_widget_history_${state.agentId}`;
+  const STORAGE_KEY_OPEN = `rag_widget_open_${state.agentId}`;
 
   try {
     let storedVisitor = localStorage.getItem(STORAGE_KEY_VISITOR);
@@ -449,6 +451,101 @@
       40% { transform: scale(1); }
     }
 
+    .typewriter-cursor {
+      display: inline-block;
+      width: 7px;
+      height: 14px;
+      background: var(--primary);
+      margin-left: 3px;
+      vertical-align: middle;
+      border-radius: 1px;
+      animation: cursorBlink 0.8s infinite;
+    }
+
+    @keyframes cursorBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    .crawl-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 8px;
+      font-size: 11px;
+      color: #0891b2;
+      font-weight: 600;
+      margin: 6px 16px 2px 16px;
+    }
+
+    /* Floating Scraper Notification Pill */
+    .launcher-crawl-pill {
+      position: absolute;
+      bottom: 74px;
+      right: 0;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 14px;
+      background: #0f172a;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+      cursor: pointer;
+      pointer-events: auto;
+      animation: floatPill 3s ease-in-out infinite alternate;
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+
+    .launcher-crawl-pill.ready {
+      color: #34d399;
+      border-color: rgba(52, 211, 153, 0.4);
+    }
+
+    .crawler-pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #06b6d4;
+      animation: pulse 1.5s infinite;
+      flex-shrink: 0;
+    }
+
+    .crawler-pulse-dot.ready {
+      background: #10b981;
+    }
+
+    @keyframes floatPill {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-4px); }
+    }
+
+    .drawer-crawl-banner {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 16px;
+      background: rgba(6, 182, 212, 0.1);
+      border-bottom: 1px solid rgba(6, 182, 212, 0.2);
+      color: #0891b2;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .drawer-crawl-banner.ready {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.25);
+      color: #059669;
+    }
+
     /* Mobile Responsiveness */
     @media (max-width: 640px) {
       .widget-container {
@@ -484,13 +581,18 @@
           </div>
         </div>
         <div class="header-actions">
-          <button class="icon-btn" id="clearBtn" title="Restart Conversation">
+          <button class="icon-btn" id="clearBtn" type="button" title="Restart Conversation">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
           </button>
-          <button class="icon-btn" id="closeDrawerBtn" title="Close">
+          <button class="icon-btn" id="closeDrawerBtn" type="button" title="Close">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+      </div>
+
+      <div class="drawer-crawl-banner" id="drawerCrawlBanner" style="display:none;">
+        <span class="crawler-pulse-dot" id="drawerCrawlDot"></span>
+        <span id="drawerCrawlText">🌐 Auto-indexing website pages into AI vector memory...</span>
       </div>
 
       <div class="messages-pane" id="messagesPane">
@@ -503,13 +605,18 @@
 
       <div class="input-footer">
         <input type="text" class="chat-input" id="chatInput" placeholder="${state.placeholder}" autocomplete="off" />
-        <button class="send-btn" id="sendBtn" title="Send Message">
+        <button class="send-btn" id="sendBtn" type="button" title="Send Message">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
     </div>
 
-    <button class="launcher-btn" id="launcherBtn" aria-label="Open AI Chat">
+    <div class="launcher-crawl-pill" id="launcherCrawlPill" style="display:none;" title="Click to view AI assistant">
+      <span class="crawler-pulse-dot" id="launcherCrawlDot"></span>
+      <span id="launcherCrawlText">🌐 Auto-indexing website knowledge...</span>
+    </div>
+
+    <button class="launcher-btn" id="launcherBtn" type="button" aria-label="Open AI Chat">
       <div class="unread-badge" id="unreadBadge"></div>
       <svg class="launcher-icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       <svg class="close-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -544,6 +651,9 @@
 
   function toggleWidget(force) {
     state.isOpen = force !== undefined ? force : !state.isOpen;
+    try {
+      localStorage.setItem(STORAGE_KEY_OPEN, state.isOpen ? 'true' : 'false');
+    } catch (e) {}
     if (state.isOpen) {
       chatDrawer.classList.add('open');
       launcherBtn.classList.add('is-open');
@@ -560,7 +670,11 @@
 
   clearBtn.addEventListener('click', () => {
     state.conversationId = null;
-    try { localStorage.removeItem(STORAGE_KEY_CONV); } catch (e) {}
+    state.messages = [];
+    try {
+      localStorage.removeItem(STORAGE_KEY_CONV);
+      localStorage.removeItem(STORAGE_KEY_HISTORY);
+    } catch (e) {}
     messagesPane.innerHTML = `
       <div class="message assistant">
         <div class="bubble">${state.greeting}</div>
@@ -591,6 +705,32 @@
       }
 
       // Step B: Automatic initial crawl trigger
+      function pollCrawlStatus(attempts = 0) {
+        if (attempts > 8) return;
+        setTimeout(() => {
+          fetch(`${state.apiUrl}/api/v1/widget/bootstrap`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agent_id: state.agentId,
+              public_key: state.publicKey,
+              origin: window.location.origin,
+              current_site_origin: window.location.origin
+            })
+          })
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && data.knowledge_status === 'ready') {
+              showCrawlBadge('✓ Website knowledge base indexed & ready for AI answers!', true);
+            } else if (data && (data.knowledge_status === 'processing' || data.crawl_triggered)) {
+              showCrawlBadge('🌐 Auto-indexing website knowledge into AI vector memory...');
+              pollCrawlStatus(attempts + 1);
+            }
+          })
+          .catch(() => {});
+        }, 3000);
+      }
+
       fetch(`${state.apiUrl}/api/v1/widget/bootstrap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -600,11 +740,43 @@
           origin: window.location.origin,
           current_site_origin: window.location.origin
         })
-      }).catch(() => {});
+      })
+      .then(res => res.ok ? res.json() : null)
+      .then(bootData => {
+        if (bootData) {
+          console.log('[RAG Widget] Bootstrap status:', bootData);
+          if (bootData.crawl_triggered || bootData.knowledge_status === 'indexing' || bootData.knowledge_status === 'processing') {
+            showCrawlBadge(bootData.message || '🌐 Auto-indexing website knowledge into AI vector memory...');
+            pollCrawlStatus(0);
+          } else if (bootData.knowledge_status === 'ready') {
+            showCrawlBadge('✓ Website knowledge base connected & active', true);
+          }
+        }
+      })
+      .catch(() => {});
     } catch (e) {
       console.warn('[RAG Widget] Config loaded with offline defaults:', e);
       renderSuggestions();
     }
+  }
+
+  function showCrawlBadge(msg, isReady = false) {
+    const launcherPill = shadow.getElementById('launcherCrawlPill');
+    const drawerBanner = shadow.getElementById('drawerCrawlBanner');
+
+    // Never show indexing banner or pill to visitors
+    if (launcherPill) launcherPill.style.display = 'none';
+    if (drawerBanner) drawerBanner.style.display = 'none';
+  }
+
+  // Pill click opens widget
+  const launcherCrawlPill = shadow.getElementById('launcherCrawlPill');
+  if (launcherCrawlPill) {
+    launcherCrawlPill.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleWidget(true);
+    });
   }
 
   function renderSuggestions() {
@@ -616,9 +788,12 @@
     suggestionsPane.innerHTML = '';
     list.forEach(q => {
       const chip = document.createElement('button');
+      chip.type = 'button';
       chip.className = 'suggestion-chip';
       chip.textContent = q;
-      chip.addEventListener('click', () => {
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         chatInput.value = q;
         sendMessage();
       });
@@ -639,7 +814,36 @@
       .replace(/\n/g, '<br/>');
   }
 
-  function appendMessage(role, text, sources = []) {
+  function saveHistoryToStorage() {
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(state.messages.slice(-50)));
+    } catch(e) {}
+  }
+
+  function restoreHistoryFromStorage() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_HISTORY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          state.messages = parsed;
+          messagesPane.innerHTML = '';
+          for (const msg of state.messages) {
+            appendMessage(msg.role, msg.text, msg.sources || [], false);
+          }
+          messagesPane.scrollTop = messagesPane.scrollHeight;
+          // Hide suggestions when there's existing chat history
+          if (suggestionsPane) suggestionsPane.style.display = 'none';
+        }
+      }
+      const wasOpen = localStorage.getItem(STORAGE_KEY_OPEN) === 'true';
+      if (wasOpen) {
+        toggleWidget(true);
+      }
+    } catch(e) {}
+  }
+
+  function appendMessage(role, text, sources = [], save = true) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role}`;
 
@@ -653,7 +857,7 @@
       citationsDiv.className = 'citations-container';
       sources.forEach((src, idx) => {
         const label = src.title || `Source ${idx + 1}`;
-        const url = src.source_url || '#';
+        const url = src.source_url || src.url || '#';
         const badge = document.createElement('a');
         badge.className = 'citation-badge';
         badge.href = url;
@@ -667,6 +871,12 @@
 
     messagesPane.appendChild(msgDiv);
     messagesPane.scrollTop = messagesPane.scrollHeight;
+
+    if (save && text) {
+      state.messages.push({ role, text, sources: sources || [] });
+      saveHistoryToStorage();
+    }
+
     return bubble;
   }
 
@@ -677,13 +887,13 @@
 
     chatInput.value = '';
     suggestionsPane.style.display = 'none';
-    appendMessage('user', text);
+    appendMessage('user', text, [], true);
 
     state.isStreaming = true;
     sendBtn.disabled = true;
 
-    // Append assistant typing container
-    const assistantBubble = appendMessage('assistant', '');
+    // Append assistant typing container with bouncing dots
+    const assistantBubble = appendMessage('assistant', '', [], false);
     assistantBubble.innerHTML = `
       <div class="typing-dots">
         <span class="dot"></span>
@@ -714,9 +924,45 @@
       if (contentType.includes('text/event-stream') && response.body) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-        let accumulatedText = '';
         let accumulatedSources = [];
-        assistantBubble.innerHTML = '';
+        let firstTokenReceived = false;
+
+        const tokenQueue = [];
+        let isTyping = false;
+        let displayedText = '';
+
+        function drainQueue() {
+          if (tokenQueue.length === 0) {
+            isTyping = false;
+            return;
+          }
+          isTyping = true;
+
+          // Replace typing dots with text ONLY when the first piece is ready to render
+          if (!firstTokenReceived) {
+            firstTokenReceived = true;
+            assistantBubble.innerHTML = '';
+          }
+
+          const piece = tokenQueue.shift();
+          displayedText += piece;
+          assistantBubble.innerHTML = formatMessageText(displayedText) + '<span class="typewriter-cursor"></span>';
+          messagesPane.scrollTop = messagesPane.scrollHeight;
+
+          // Natural ChatGPT cadence (24ms to 32ms per word - never dump at 6ms)
+          const delay = tokenQueue.length > 25 ? 20 : tokenQueue.length > 10 ? 26 : 32;
+          setTimeout(drainQueue, delay);
+        }
+
+        function enqueueToken(tok) {
+          if (!tok) return;
+          // Split on whitespace or punctuation boundaries to preserve word flow
+          const pieces = tok.match(/\S+|\s+/g) || [tok];
+          for (const p of pieces) {
+            tokenQueue.push(p);
+          }
+          if (!isTyping) drainQueue();
+        }
 
         let buffer = '';
         while (true) {
@@ -733,10 +979,15 @@
               try {
                 const event = JSON.parse(dataStr);
                 if (event.event === 'token' && event.token) {
-                  accumulatedText += event.token;
-                  assistantBubble.innerHTML = formatMessageText(accumulatedText);
-                  messagesPane.scrollTop = messagesPane.scrollHeight;
+                  enqueueToken(event.token);
+                } else if (event.event === 'meta') {
+                  // Capture conversation_id from meta event (backend sends it here)
+                  if (event.conversation_id) {
+                    state.conversationId = event.conversation_id;
+                    try { localStorage.setItem(STORAGE_KEY_CONV, event.conversation_id); } catch(e) {}
+                  }
                 } else if (event.event === 'done') {
+                  // Also check conversation_id in done event as fallback
                   if (event.conversation_id) {
                     state.conversationId = event.conversation_id;
                     try { localStorage.setItem(STORAGE_KEY_CONV, event.conversation_id); } catch(e) {}
@@ -749,6 +1000,16 @@
             }
           }
         }
+
+        // Wait until typewriter finishes
+        while (isTyping || tokenQueue.length > 0) {
+          await new Promise(r => setTimeout(r, 30));
+        }
+        assistantBubble.innerHTML = formatMessageText(displayedText);
+
+        // Persist completed turn into localStorage
+        state.messages.push({ role: 'assistant', text: displayedText, sources: accumulatedSources });
+        saveHistoryToStorage();
 
         function renderCitationsList(sourcesList) {
           if (!sourcesList || sourcesList.length === 0) return;
@@ -781,13 +1042,63 @@
 
         renderCitationsList(accumulatedSources);
       } else {
-        // Non-streaming fallback
+        // Non-streaming fallback: route text through ChatGPT typewriter effect
         const result = await response.json();
-        assistantBubble.innerHTML = formatMessageText(result.answer);
         if (result.conversation_id) {
           state.conversationId = result.conversation_id;
           try { localStorage.setItem(STORAGE_KEY_CONV, result.conversation_id); } catch(e) {}
         }
+
+        function renderCitationsList(sourcesList) {
+          if (!sourcesList || sourcesList.length === 0) return;
+          const seen = new Set();
+          const unique = [];
+          for (const s of sourcesList) {
+            const key = (s.source_url || s.url || '') + '|' + (s.title || '');
+            if (!seen.has(key)) {
+              seen.add(key);
+              unique.push(s);
+            }
+          }
+          if (unique.length === 0) return;
+
+          const citationsDiv = document.createElement('div');
+          citationsDiv.className = 'citations-container';
+          unique.forEach((src, idx) => {
+            const label = src.title || `Source ${idx + 1}`;
+            const url = src.source_url || src.url || '#';
+            const badge = document.createElement('a');
+            badge.className = 'citation-badge';
+            badge.href = url;
+            badge.target = '_blank';
+            badge.rel = 'noopener noreferrer';
+            badge.innerHTML = `📄 <span>${label}</span>`;
+            citationsDiv.appendChild(badge);
+          });
+          assistantBubble.parentElement.appendChild(citationsDiv);
+        }
+
+        const answerText = result.answer || '';
+        const words = answerText.match(/\S+|\s+/g) || [answerText];
+        let idx = 0;
+        let typed = '';
+        assistantBubble.innerHTML = '<span class="typewriter-cursor"></span>';
+        await new Promise((resolve) => {
+          function typeStep() {
+            if (idx < words.length) {
+              typed += words[idx++];
+              assistantBubble.innerHTML = formatMessageText(typed) + '<span class="typewriter-cursor"></span>';
+              messagesPane.scrollTop = messagesPane.scrollHeight;
+              setTimeout(typeStep, 28);
+            } else {
+              assistantBubble.innerHTML = formatMessageText(typed);
+              resolve();
+            }
+          }
+          typeStep();
+        });
+        state.messages.push({ role: 'assistant', text: answerText, sources: result.sources || [] });
+        saveHistoryToStorage();
         renderCitationsList(result.sources);
       }
     } catch (err) {
@@ -800,9 +1111,17 @@
     }
   }
 
-  sendBtn.addEventListener('click', sendMessage);
+  sendBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sendMessage();
+  });
   chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendMessage();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      sendMessage();
+    }
   });
 
   // 11. Global JavaScript API for Host Applications
@@ -821,6 +1140,7 @@
     }
   };
 
-  // Trigger public config fetch
+  // Trigger public config fetch and restore history
   loadPublicConfig();
+  restoreHistoryFromStorage();
 })();

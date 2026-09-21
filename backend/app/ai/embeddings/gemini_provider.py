@@ -12,12 +12,15 @@ except ImportError:
     genai = None
 
 
+import time
+
 class GeminiEmbeddingProvider(EmbeddingProvider):
     def __init__(self, api_key: Optional[str] = None, model: str = "gemini-embedding-001"):
         self.api_key = api_key or settings.GEMINI_API_KEY
         self.model = model
         self._dim = 3072
         self.client = genai.Client(api_key=self.api_key) if genai and self.api_key else None
+        self._cooldown_until = 0.0
 
     @property
     def dimension(self) -> int:
@@ -92,10 +95,14 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         return [r for r in results if r is not None]
 
     async def embed_query(self, query: str) -> List[float]:
+        # Fast path if rate limit cooldown is active
+        if time.monotonic() < self._cooldown_until:
+            from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
+            return await LocalEmbeddingProvider(dimension=self._dim).embed_query(query)
+
         if not self.client:
             from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
-            local_provider = LocalEmbeddingProvider(dimension=self._dim)
-            return await local_provider.embed_query(query)
+            return await LocalEmbeddingProvider(dimension=self._dim).embed_query(query)
         
         # Check L1 embedding cache (< 0.05ms)
         cached = get_cached_embedding(query)
@@ -115,14 +122,13 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                 values = getattr(response, "values", [])
             set_cached_embedding(query, values)
             return values
-        except Exception:
-            try:
-                values = await asyncio.to_thread(self._sync_embed, query)
-                set_cached_embedding(query, values)
-                return values
-            except Exception as e:
-                from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
-                logger.warning(f"Gemini API embed_query failed ({e}), using local deterministic fallback")
-                local_provider = LocalEmbeddingProvider(dimension=self._dim)
-                return await local_provider.embed_query(query)
+        except Exception as e:
+            err_str = str(e)
+            from backend.app.ai.embeddings.local_provider import LocalEmbeddingProvider
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                self._cooldown_until = time.monotonic() + 60.0
+                logger.warning("Gemini embedding rate limit reached (429). Activating 60s cooldown; seamlessly using local fallback.")
+            else:
+                logger.debug(f"Gemini API embed_query notice: {e}, using local fallback")
+            return await LocalEmbeddingProvider(dimension=self._dim).embed_query(query)
 

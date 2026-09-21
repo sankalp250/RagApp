@@ -177,17 +177,24 @@ import os
 @app.get("/widget.js", include_in_schema=False)
 async def serve_widget_js():
     widget_path = os.path.join(os.getcwd(), "widget.js")
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
     if os.path.exists(widget_path):
-        return FileResponse(widget_path, media_type="application/javascript")
+        return FileResponse(widget_path, media_type="application/javascript", headers=headers)
     alt_path = os.path.join(os.getcwd(), "frontend", "public", "widget.js")
-    return FileResponse(alt_path, media_type="application/javascript")
+    return FileResponse(alt_path, media_type="application/javascript", headers=headers)
 
 @app.get("/", include_in_schema=False)
-@app.get("/demo", include_in_schema=False)
-@app.get("/test", include_in_schema=False)
-async def serve_demo_html():
-    demo_path = os.path.join(os.getcwd(), "index.html")
-    return FileResponse(demo_path, media_type="text/html")
+async def root_api_status():
+    return {
+        "service": "AI Knowledge Intelligence Platform API",
+        "status": "healthy",
+        "docs_url": "/docs",
+        "widget_url": "/widget.js"
+    }
 
 
 

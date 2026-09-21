@@ -142,10 +142,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Attach CDN Cache-Control headers on static widget script
+        # Dynamic Cache-Control on static widget script: allow immediate dev reloads
         if path.startswith("/widget.js") or path.endswith("/widget.js"):
             response = await call_next(request)
-            response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
             return response
 
         # Skip rate limiting on OPTIONS preflight and health/docs endpoints

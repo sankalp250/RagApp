@@ -61,6 +61,7 @@ Thumbs.db
 # Storage / Uploads
 backend/storage/
 uploads/
+scratch/
 *.sqlite3
 *.db
 

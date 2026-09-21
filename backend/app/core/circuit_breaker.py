@@ -66,13 +66,13 @@ class CircuitBreaker:
             result = await asyncio.wait_for(func(*args, **kwargs), timeout=self.call_timeout)
             await self._on_success()
             return result
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             logger.error(f"CircuitBreaker [{self.name}] timed out after {self.call_timeout}s.")
-            await self._on_failure()
+            await self._on_failure(e)
             raise TimeoutError(f"Provider [{self.name}] timed out.")
         except Exception as e:
             logger.error(f"CircuitBreaker [{self.name}] execution error: {e}")
-            await self._on_failure()
+            await self._on_failure(e)
             raise
 
     async def call_stream(self, stream_fn: Callable, *args, **kwargs):
@@ -95,7 +95,7 @@ class CircuitBreaker:
             await self._on_success()
         except Exception as e:
             logger.error(f"CircuitBreaker [{self.name}] stream execution error: {e}")
-            await self._on_failure()
+            await self._on_failure(e)
             raise
 
     async def _on_success(self):
@@ -105,11 +105,25 @@ class CircuitBreaker:
             self.failure_count = 0
             self.state = CircuitState.CLOSED
 
-    async def _on_failure(self):
+    async def _on_failure(self, exc: Optional[Exception] = None):
         async with self._lock:
             self.failure_count += 1
             self.last_failure_time = time.monotonic()
-            if self.state == CircuitState.HALF_OPEN or self.failure_count >= self.failure_threshold:
+            err_str = str(exc or "").lower()
+            is_fatal_auth = any(k in err_str for k in ["401", "authenticationerror", "incorrect api key", "unauthorized"])
+            is_quota = any(k in err_str for k in ["429", "resource_exhausted", "resourceexhausted", "quota"])
+
+            if is_fatal_auth:
+                self.failure_count = self.failure_threshold
+                self.state = CircuitState.OPEN
+                self.recovery_timeout = 3600.0  # Cool off bad credentials
+                logger.warning(f"CircuitBreaker [{self.name}] immediately tripped to OPEN due to auth failure.")
+            elif is_quota:
+                self.failure_count = self.failure_threshold
+                self.state = CircuitState.OPEN
+                self.recovery_timeout = 60.0    # Cool off quota exhaustion for 60s
+                logger.warning(f"CircuitBreaker [{self.name}] immediately tripped to OPEN due to quota limit.")
+            elif self.state == CircuitState.HALF_OPEN or self.failure_count >= self.failure_threshold:
                 self.state = CircuitState.OPEN
                 logger.warning(
                     f"CircuitBreaker [{self.name}] tripped to OPEN after {self.failure_count} failures."

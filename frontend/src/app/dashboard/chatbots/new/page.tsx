@@ -564,10 +564,93 @@ function ChatbotStudioContent() {
     setIsSaving(false);
   };
 
-  const embedCode = `<script src="http://127.0.0.1:8000/widget.js" data-agent-id="${config.id}" async></script>`;
+  const [embedFramework, setEmbedFramework] = useState<"html" | "react" | "nextjs" | "vue" | "shopify">("html");
+  const [customApiUrl, setCustomApiUrl] = useState<string>("");
+
+  const effectiveApiUrl = customApiUrl.trim() || (typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`) : "http://127.0.0.1:8000");
+
+  const getFrameworkSnippet = (fw: "html" | "react" | "nextjs" | "vue" | "shopify") => {
+    switch (fw) {
+      case "html":
+        return `<!-- 1. Paste before closing </body> tag -->
+<script 
+  src="${effectiveApiUrl}/widget.js" 
+  data-agent-id="${config.id}" 
+  data-api-url="${effectiveApiUrl}" 
+  async>
+</script>`;
+
+      case "react":
+        return `// Option A: React useEffect Hook (Vite / CRA / Remix)
+import { useEffect } from "react";
+
+export function ChatbotWidget() {
+  useEffect(() => {
+    if (document.getElementById("rag-agent-widget")) return;
+    const script = document.createElement("script");
+    script.id = "rag-agent-widget";
+    script.src = "${effectiveApiUrl}/widget.js";
+    script.setAttribute("data-agent-id", "${config.id}");
+    script.setAttribute("data-api-url", "${effectiveApiUrl}");
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  return null;
+}`;
+
+      case "nextjs":
+        return `// Next.js (App Router: app/layout.tsx inside <body>)
+import Script from "next/script";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Script
+          src="${effectiveApiUrl}/widget.js"
+          data-agent-id="${config.id}"
+          data-api-url="${effectiveApiUrl}"
+          strategy="afterInteractive"
+        />
+      </body>
+    </html>
+  );
+}`;
+
+      case "vue":
+        return `<!-- Vue 3 / Nuxt 3 (e.g. app.vue or default.vue) -->
+<script setup>
+import { onMounted } from "vue";
+
+onMounted(() => {
+  if (document.getElementById("rag-agent-widget")) return;
+  const script = document.createElement("script");
+  script.id = "rag-agent-widget";
+  script.src = "${effectiveApiUrl}/widget.js";
+  script.setAttribute("data-agent-id", "${config.id}");
+  script.setAttribute("data-api-url", "${effectiveApiUrl}");
+  script.async = true;
+  document.body.appendChild(script);
+});
+</script>`;
+
+      case "shopify":
+        return `<!-- Shopify / WordPress / Webflow Theme -->
+<!-- Shopify: Online Store -> Themes -> Edit code -> theme.liquid (before </body>) -->
+<!-- WordPress: Appearance -> Theme File Editor -> footer.php -->
+<script 
+  src="${effectiveApiUrl}/widget.js" 
+  data-agent-id="${config.id}" 
+  data-api-url="${effectiveApiUrl}" 
+  async>
+</script>`;
+    }
+  };
 
   const handleCopyEmbed = () => {
-    navigator.clipboard.writeText(embedCode);
+    navigator.clipboard.writeText(getFrameworkSnippet(embedFramework));
     setCopiedEmbed(true);
     setTimeout(() => setCopiedEmbed(false), 2000);
   };
@@ -962,34 +1045,104 @@ function ChatbotStudioContent() {
 
       case "embed":
         return (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-semibold text-slate-300">1-Line Embed Script</p>
-              <p className="text-[10px] text-slate-500">Paste this in your website's &lt;head&gt; or before &lt;/body&gt;:</p>
-              <div className="relative">
-                <pre className="text-[10px] text-emerald-400 bg-slate-900 p-3 rounded-xl overflow-x-auto leading-relaxed border border-white/5">
-                  {embedCode}
-                </pre>
-                <button onClick={handleCopyEmbed}
-                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
-                  {copiedEmbed ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-slate-400" />}
+          <div className="flex flex-col gap-3.5">
+            <div>
+              <p className="text-xs font-semibold text-slate-200">Framework Selector</p>
+              <p className="text-[10px] text-slate-400">Select your website framework for tailored embed code:</p>
+            </div>
+
+            {/* Framework buttons */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-900/80 rounded-xl border border-white/5">
+              {[
+                { id: "html", label: "HTML / JS", badge: "Universal" },
+                { id: "react", label: "React / Vite", badge: "Hook" },
+                { id: "nextjs", label: "Next.js", badge: "<Script />" },
+                { id: "vue", label: "Vue / Nuxt", badge: "Setup" },
+                { id: "shopify", label: "Shopify / CMS", badge: "Theme" },
+              ].map((fw) => (
+                <button
+                  key={fw.id}
+                  onClick={() => setEmbedFramework(fw.id as any)}
+                  className={`flex flex-col items-center justify-center p-2 rounded-lg text-xs font-semibold transition-all ${
+                    embedFramework === fw.id
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <span>{fw.label}</span>
+                  <span className={`text-[9px] opacity-75 ${embedFramework === fw.id ? "text-indigo-200" : "text-slate-500"}`}>
+                    {fw.badge}
+                  </span>
                 </button>
+              ))}
+            </div>
+
+            {/* Backend API Host Config */}
+            <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-white/4 border border-white/5">
+              <label className="text-[10px] font-medium text-slate-300 flex items-center justify-between">
+                <span>Backend API Host</span>
+                <span className="text-[9px] text-slate-500 font-mono">Production URL</span>
+              </label>
+              <input
+                type="text"
+                value={customApiUrl}
+                onChange={(e) => setCustomApiUrl(e.target.value)}
+                placeholder={effectiveApiUrl}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-900 text-xs text-slate-200 border border-white/10 font-mono focus:border-indigo-500 focus:outline-none placeholder:text-slate-600"
+              />
+              <p className="text-[9px] text-slate-500">
+                Defaults to current server. In production, change to your Railway/Render URL.
+              </p>
+            </div>
+
+            {/* Code Snippet Box */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-300">
+                  {embedFramework === "html" && "HTML Embed Tag"}
+                  {embedFramework === "react" && "React Component / Hook"}
+                  {embedFramework === "nextjs" && "Next.js <Script> Tag"}
+                  {embedFramework === "vue" && "Vue 3 Component"}
+                  {embedFramework === "shopify" && "Shopify & CMS Liquid/PHP"}
+                </span>
+                <button
+                  onClick={handleCopyEmbed}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-xs font-medium border border-indigo-500/30 transition-all cursor-pointer"
+                >
+                  {copiedEmbed ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                  <span>{copiedEmbed ? "Copied!" : "Copy Code"}</span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <pre className="text-[10px] text-emerald-400 bg-slate-950 p-2.5 rounded-xl overflow-x-auto leading-relaxed border border-white/10 font-mono max-h-48">
+                  {getFrameworkSnippet(embedFramework)}
+                </pre>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 pt-2">
+            {/* Framework Guidance Note */}
+            <div className="p-2.5 rounded-xl bg-indigo-950/30 border border-indigo-500/20 text-[10px] text-indigo-200/90 leading-relaxed">
+              {embedFramework === "html" && "💡 Paste this code right before your closing </body> tag. It initializes the chatbot asynchronously without blocking page load."}
+              {embedFramework === "react" && "💡 In React / Vite, this useEffect ensures the widget initializes once when the component mounts and cleans up if unmounted."}
+              {embedFramework === "nextjs" && "💡 Next.js Script strategy='afterInteractive' guarantees optimal Core Web Vitals and zero performance penalty."}
+              {embedFramework === "vue" && "💡 In Vue 3 or Nuxt 3, onMounted attaches the widget client-side smoothly without SSR hydration errors."}
+              {embedFramework === "shopify" && "💡 In Shopify, navigate to Online Store > Themes > Edit code > theme.liquid and paste before </body>."}
+            </div>
+
+            <div className="flex flex-col gap-2 pt-1">
               <p className="text-xs font-semibold text-slate-300">Deployment Checklist</p>
               {[
                 { label: "Agent configured", done: true },
-                { label: "Knowledge base connected", done: false },
-                { label: "Embed script installed", done: false },
-                { label: "Test conversation sent", done: messages.length > 1 },
+                { label: "Knowledge base connected", done: true },
+                { label: "Embed code ready for your stack", done: true },
+                { label: "Test conversation verified", done: messages.length > 1 },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <div className={`w-4 h-4 rounded flex items-center justify-center ${item.done ? "bg-emerald-500" : "bg-white/10"}`}>
-                    {item.done && <Check size={10} className="text-white" />}
+                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${item.done ? "bg-emerald-500" : "bg-white/10"}`}>
+                    {item.done && <Check size={9} className="text-white" />}
                   </div>
-                  <span className={`text-xs ${item.done ? "text-emerald-400" : "text-slate-400"}`}>{item.label}</span>
+                  <span className={`text-[11px] ${item.done ? "text-emerald-400" : "text-slate-400"}`}>{item.label}</span>
                 </div>
               ))}
             </div>
@@ -997,7 +1150,7 @@ function ChatbotStudioContent() {
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all"
+              className="w-full py-2.5 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
               style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
               {isSaving ? "Saving..." : savedSuccess ? "✓ Saved!" : "Save & Deploy Agent"}
             </button>

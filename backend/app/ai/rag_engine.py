@@ -390,6 +390,26 @@ async def _call_rewrite_llm(prompt: str) -> str:
         except Exception:
             pass
 
+    fallback = (settings.FALLBACK_LLM_PROVIDER or "groq").lower()
+
+    if fallback == "groq" and settings.GROQ_API_KEY:
+        try:
+            async def _groq_rewrite():
+                client = _get_groq_client()
+                if not client:
+                    return ""
+                resp = await client.chat.completions.create(
+                    model=settings.GROQ_FALLBACK_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=80
+                )
+                return resp.choices[0].message.content or ""
+
+            return await groq_breaker.call(_groq_rewrite)
+        except Exception:
+            pass
+
     if settings.OPENAI_API_KEY:
         try:
             async def _openai_rewrite():
@@ -408,7 +428,7 @@ async def _call_rewrite_llm(prompt: str) -> str:
         except Exception:
             pass
 
-    if settings.GROQ_API_KEY:
+    if fallback != "groq" and settings.GROQ_API_KEY:
         try:
             async def _groq_rewrite():
                 client = _get_groq_client()
@@ -670,7 +690,11 @@ async def generate_answer_stream(
     """
     # Guardrail Check 1: If no context chunks exist and query is not a greeting, enforce strict domain guardrail
     if not context_chunks and not _is_greeting_or_conversational(user_message):
-        yield GUARDRAIL_REFUSAL_MESSAGE
+        words = GUARDRAIL_REFUSAL_MESSAGE.split(" ")
+        for i, word in enumerate(words):
+            token = word + (" " if i < len(words) - 1 else "")
+            yield token
+            await asyncio.sleep(0.015)
         return
 
     if context_chunks:
@@ -742,9 +766,28 @@ async def generate_answer_stream(
                 yield token
             return
         except Exception as e:
-            logger.warning(f"Gemini streaming failed via circuit breaker: {e}. Falling back to OpenAI / Groq.")
+            logger.warning(f"Gemini streaming failed via circuit breaker: {e}. Falling back to configured fallback.")
 
-    # Stream Route 3: OpenAI fallback (if Gemini exhausted or not available)
+    fallback_provider = (settings.FALLBACK_LLM_PROVIDER or "groq").lower()
+
+    # Stream Route 3A: Groq fallback (when configured as primary fallback)
+    if fallback_provider == "groq" and settings.GROQ_API_KEY:
+        try:
+            async for token in groq_breaker.call_stream(
+                _call_groq_stream,
+                system_prompt=full_system,
+                history=conversation_history,
+                user_message=user_message,
+                model=settings.GROQ_FALLBACK_MODEL,
+                temperature=temperature,
+                max_tokens=max_tokens
+            ):
+                yield token
+            return
+        except Exception as e:
+            logger.warning(f"Groq primary fallback streaming failed via circuit breaker: {e}. Trying secondary fallbacks.")
+
+    # Stream Route 3B: OpenAI fallback
     if settings.OPENAI_API_KEY:
         try:
             async for token in openai_breaker.call_stream(
@@ -759,10 +802,10 @@ async def generate_answer_stream(
                 yield token
             return
         except Exception as e:
-            logger.warning(f"OpenAI fallback streaming failed via circuit breaker: {e}. Falling back to Groq.")
+            logger.warning(f"OpenAI fallback streaming failed via circuit breaker: {e}.")
 
-    # Stream Route 4: Groq fallback
-    if settings.GROQ_API_KEY:
+    # Stream Route 3C: Groq fallback (if not already tried)
+    if fallback_provider != "groq" and settings.GROQ_API_KEY:
         try:
             async for token in groq_breaker.call_stream(
                 _call_groq_stream,
@@ -776,7 +819,7 @@ async def generate_answer_stream(
                 yield token
             return
         except Exception as e:
-            logger.error(f"Groq streaming fallback failed via circuit breaker: {e}")
+            logger.error(f"Groq streaming secondary fallback failed via circuit breaker: {e}")
 
     yield "I'm experiencing technical difficulties with AI providers. Please check your API keys or try again later."
 

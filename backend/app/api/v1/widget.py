@@ -117,8 +117,6 @@ async def get_widget_config(
     async def _proactive_warmup():
         try:
             await _get_or_build_index(None, str(agent.id), str(agent.organization_id))
-            provider = EmbeddingService.get_provider()
-            await provider.embed_query("warmup ping")
         except Exception:
             pass
     asyncio.create_task(_proactive_warmup())

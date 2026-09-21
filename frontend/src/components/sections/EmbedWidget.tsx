@@ -7,18 +7,75 @@ import { Code2, Copy, Check, Sparkles, Bot, Globe } from "lucide-react";
 import { fadeUp } from "@/lib/animation";
 
 export function EmbedWidget() {
+  const [activeTab, setActiveTab] = useState<"html" | "react" | "nextjs" | "shopify">("html");
   const [copied, setCopied] = useState(false);
 
-  const codeSnippet = `<script
-  src="http://127.0.0.1:8000/widget.js"
+  const snippets: Record<"html" | "react" | "nextjs" | "shopify", { label: string; code: string; hint: string }> = {
+    html: {
+      label: "HTML / Vanilla JS",
+      hint: "Paste before </body> on any static HTML, PHP, or template page",
+      code: `<script
+  src="https://api.yourdomain.com/widget.js"
   data-agent-id="agent_9842fae"
-  data-theme="light"
-  data-position="bottom-right"
+  data-api-url="https://api.yourdomain.com"
   async
-></script>`;
+></script>`,
+    },
+    react: {
+      label: "React (Vite / CRA)",
+      hint: "Drop into App.tsx or use our <RagChatbot /> wrapper component",
+      code: `import { useEffect } from "react";
+
+export function ChatWidget() {
+  useEffect(() => {
+    if (document.getElementById("rag-widget")) return;
+    const s = document.createElement("script");
+    s.id = "rag-widget";
+    s.src = "https://api.yourdomain.com/widget.js";
+    s.setAttribute("data-agent-id", "agent_9842fae");
+    s.setAttribute("data-api-url", "https://api.yourdomain.com");
+    s.async = true;
+    document.body.appendChild(s);
+  }, []);
+  return null;
+}`,
+    },
+    nextjs: {
+      label: "Next.js (App Router)",
+      hint: "Add to app/layout.tsx inside <body> with non-blocking strategy",
+      code: `import Script from "next/script";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Script
+          src="https://api.yourdomain.com/widget.js"
+          data-agent-id="agent_9842fae"
+          data-api-url="https://api.yourdomain.com"
+          strategy="afterInteractive"
+        />
+      </body>
+    </html>
+  );
+}`,
+    },
+    shopify: {
+      label: "Shopify / WordPress",
+      hint: "Paste into theme.liquid or footer.php before </body>",
+      code: `<!-- Shopify / WordPress / Webflow Theme -->
+<script
+  src="https://api.yourdomain.com/widget.js"
+  data-agent-id="agent_9842fae"
+  data-api-url="https://api.yourdomain.com"
+  async
+></script>`,
+    },
+  };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(codeSnippet);
+    navigator.clipboard.writeText(snippets[activeTab].code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -39,20 +96,37 @@ export function EmbedWidget() {
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true }}
-          className="lg:col-span-6 p-6 sm:p-8 rounded-[36px] bg-white border border-slate-200/80 shadow-xl shadow-slate-900/5 space-y-5"
+          className="lg:col-span-6 p-6 sm:p-8 rounded-[36px] bg-white border border-slate-200/80 shadow-xl shadow-slate-900/5 space-y-4"
         >
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          {/* Framework Switcher Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl overflow-x-auto">
+            {(["html", "react", "nextjs", "shopify"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === tab
+                    ? "bg-white text-indigo-700 shadow-sm shadow-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                {snippets[tab].label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Code2 className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Code2 className="w-3.5 h-3.5" />
               </div>
-              <span className="font-bold text-xs text-slate-800 uppercase tracking-wider">
-                HTML Embed Tag
+              <span className="font-semibold text-xs text-slate-700">
+                {snippets[activeTab].hint}
               </span>
             </div>
             <button
               onClick={handleCopy}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-xs font-bold text-indigo-700 transition-all cursor-pointer border border-indigo-100"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-xs font-bold text-indigo-700 transition-all cursor-pointer border border-indigo-100"
             >
               {copied ? (
                 <>
@@ -62,28 +136,28 @@ export function EmbedWidget() {
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Snippet</span>
+                  <span>Copy</span>
                 </>
               )}
             </button>
           </div>
 
-          <pre className="p-4.5 rounded-2xl bg-slate-900 text-indigo-200 font-mono text-xs sm:text-[13px] overflow-x-auto leading-relaxed shadow-inner">
-            {codeSnippet}
+          <pre className="p-4 rounded-2xl bg-slate-900 text-indigo-200 font-mono text-xs sm:text-[12px] overflow-x-auto leading-relaxed shadow-inner max-h-60">
+            {snippets[activeTab].code}
           </pre>
 
-          <div className="space-y-2 pt-2 text-xs text-slate-600 font-medium">
+          <div className="space-y-1.5 pt-1 text-xs text-slate-600 font-medium">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Lightweight bundle (~18KB gzipped)</span>
+              <span>Lightweight bundle (~18KB gzipped) · Shadow DOM style isolation</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Zero dependencies · Non-blocking async load</span>
+              <span>Zero dependencies · Non-blocking async load on all frameworks</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Custom domain whitelisting & CSP security included</span>
+              <span>Custom domain whitelisting & CORS streaming included</span>
             </div>
           </div>
         </motion.div>

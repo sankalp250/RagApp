@@ -1,24 +1,54 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: rag_postgres
+  # ────────────────────────────────────────────────────────────────────────────
+  # 🚀 FastAPI Backend + RAG Intelligence Engine
+  # ────────────────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: rag_backend
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_secure_password_123}
-      POSTGRES_DB: ${POSTGRES_DB:-rag_intelligence}
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 3
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # 💻 Next.js 15 Admin Dashboard
+  # ────────────────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: rag_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # ⚡ Redis Cache & Job Broker (Optional local fallback if Upstash not used)
+  # ────────────────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: rag_redis
@@ -33,15 +63,5 @@ services:
       timeout: 5s
       retries: 5
 
-  adminer:
-    image: adminer:latest
-    container_name: rag_adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-
 volumes:
-  postgres_data:
   redis_data:

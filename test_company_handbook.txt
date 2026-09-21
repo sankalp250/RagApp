@@ -1,0 +1,25 @@
+# APEX CLOUD INFRASTRUCTURE — INTERNAL COMPANY HANDBOOK & POLICIES (2026)
+
+## 1. Exclusive VIP Partner Program
+- VIP Discount Code: `APEX-SECRET-9988`
+- Benefit: Grants an exclusive 35% recurring discount across all Pro Enterprise Cluster tiers and Dedicated Ultra Servers.
+- Eligibility: Available exclusively to registered enterprise partners and strategic accounts.
+- Code Application: Must be applied at checkout or quoted via our autonomous AI support co-pilot.
+
+## 2. Hardware Replacement SLA & Guarantee
+- 45-Day Hardware Replacement Guarantee: In the event of CPU, memory, or NVMe storage degradation, Apex guarantees physical hardware replacement within 45 minutes of automated diagnostic alert.
+- Zero-Questions-Asked Policy: If customer benchmarks fall below 95% of rated hardware performance within the first 45 days of deployment, customers are eligible for an immediate server migration and a full service credit.
+
+## 3. Emergency Escalation Hotline & Executive PIN
+- Priority Escalation Hotline: +1 (800) 555-APEX (toll-free, 24/7/365 NOC)
+- Executive Access PIN: `7701`
+- Use Case: Dedicated infrastructure outages, DDoS attacks exceeding 500 Gbps, or emergency cluster isolation. Providing PIN `7701` bypasses standard Tier-1 triage directly to Lead Infrastructure Architects.
+
+## 4. Compliance, Security & Data Retention
+- Immutable Storage Policy: All system audit trails, server access logs, and automated snapshots are retained for exactly 7 years in Write-Once-Read-Many (WORM) compliant storage.
+- Datacenter Compliance: All Apex datacenters (Frankfurt, Tokyo, New York, Singapore) maintain active SOC 2 Type II, ISO 27001, and HIPAA compliance certifications.
+
+## 5. Billing Terms & Invoicing Cycles
+- Invoice Issuance: Monthly invoices are generated automatically on the 1st calendar day of every month.
+- Payment Terms: Standard enterprise accounts operate under NET-30 payment terms via Wire Transfer, ACH, or Corporate Credit Card.
+- Late Payment Grace Period: A 15-day grace period is provided prior to any non-production service throttling.

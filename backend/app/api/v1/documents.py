@@ -136,11 +136,13 @@ async def crawl_and_ingest_url(
     and enqueues the async chunking, embedding, and vector indexing pipeline.
     """
     import httpx
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, urldefrag
 
-    target_url = payload.url.strip()
-    if not target_url.startswith("http://") and not target_url.startswith("https://"):
-        target_url = f"https://{target_url}"
+    raw_url = payload.url.strip()
+    if not raw_url.startswith("http://") and not raw_url.startswith("https://"):
+        raw_url = f"https://{raw_url}"
+
+    target_url, fragment = urldefrag(raw_url)
 
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
@@ -261,3 +263,36 @@ async def delete_document(
         )
     except DocumentNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post(
+    "/agents/{agent_id}/cache/purge",
+    status_code=status.HTTP_200_OK,
+    summary="Purge in-memory vector index cache for an agent (no restart needed)"
+)
+async def purge_agent_cache(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Clears the in-memory vector index, BM25 index, and chat caches for this agent.
+    Call this after bulk document changes to force cache rebuild on the next query.
+    """
+    from backend.app.ai.rag_engine import invalidate_agent_chunks_cache
+    from backend.app.core.cache import _CHAT_CACHE
+
+    invalidate_agent_chunks_cache(agent_id)
+    # Also purge any chat cache keys for this agent
+    try:
+        keys_to_delete = [k for k in list(_CHAT_CACHE._cache.keys()) if agent_id in str(k)]
+        for k in keys_to_delete:
+            del _CHAT_CACHE._cache[k]
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "message": f"In-memory caches purged for agent {agent_id}. The next query will rebuild the vector index from DB."
+    }
+

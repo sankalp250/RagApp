@@ -27,7 +27,7 @@ Flow for each chat turn:
 """
 import asyncio
 import time
-from typing import List, Optional, AsyncGenerator
+from typing import List, Optional, AsyncGenerator, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -78,21 +78,30 @@ def _filter_grounded_sources(answer: str, source_chunks: List[Any]) -> List[Any]
     grounded = []
 
     # Generic words to exclude from title matching
-    ignore_words = {"techstore", "official", "knowledge", "transfer", "specs", "features", "policy", "policies", "information", "about", "with", "from", "hours"}
+    ignore_words = {
+        "techstore", "official", "knowledge", "transfer", "specs", "features",
+        "policy", "policies", "information", "about", "with", "from", "hours",
+        "data", "retention", "protocol", "escalation", "executive", "apex",
+        "global", "solutions", "guarantee", "replacement", "hardware"
+    }
 
     for idx, s in enumerate(unique_candidates):
         title = getattr(s, "title", None) or (s.get("title") if isinstance(s, dict) else "") or ""
-        # The #1 highest ranked chunk is always retained as the primary source anchor
-        if idx == 0:
-            grounded.append(s)
-            continue
+        url = getattr(s, "source_url", None) or (s.get("source_url") if isinstance(s, dict) else "") or ""
 
-        # Extract topical words from title (e.g. "Pulse", "Smartwatch", "NovaPro", "Return", "Refund")
+        # Extract topical words from title (e.g. "Datacenter", "Pricing", "SLA", "Refund")
         words = [w for w in re.findall(r"\b[a-zA-Z]{4,}\b", title.lower()) if w not in ignore_words]
-        if words and any(w in ans_lower for w in words):
+
+        if words:
+            # Only include if a topical word from the title is mentioned in the answer
+            if any(w in ans_lower for w in words):
+                grounded.append(s)
+        elif idx == 0:
+            # If top chunk has no matchable title keywords, include it as primary anchor
             grounded.append(s)
 
     return grounded
+
 
 
 class ChatService:
@@ -362,11 +371,12 @@ class ChatService:
             conv_id = request.conversation_id or str(uuid.uuid4())
             yield {"event": "meta", "conversation_id": conv_id, "cached": True}
             
-            # Instant micro-stream from memory
+            # Instant micro-stream from memory with natural token pacing
             words = cached_resp["answer"].split(" ")
             for i, word in enumerate(words):
                 token = word + (" " if i < len(words) - 1 else "")
                 yield {"event": "token", "token": token}
+                await asyncio.sleep(0.015)
             
             yield {
                 "event": "done",
