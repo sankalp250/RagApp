@@ -1,6 +1,10 @@
 # 💻 AI Knowledge Intelligence Platform — Frontend Dashboard
 
-> Modern, high-performance enterprise admin dashboard and analytics portal built with **Next.js 15 (App Router)**, **TypeScript**, **Tailwind CSS**, and **Framer Motion**.
+> Modern, high-performance enterprise admin dashboard and analytics portal built with **Next.js 16 (App Router)**, **React 19**, **TypeScript**, and **Tailwind CSS**.
+>
+> 🌐 **Production URL:** [https://rag-app-lovat-six.vercel.app](https://rag-app-lovat-six.vercel.app/)  
+> 🔗 **Backend API:** [https://ragapp-backend.onrender.com](https://ragapp-backend.onrender.com)  
+> 📖 **API Docs:** [https://ragapp-backend.onrender.com/docs](https://ragapp-backend.onrender.com/docs)
 
 ---
 

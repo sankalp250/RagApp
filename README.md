@@ -20,6 +20,18 @@
 
 ---
 
+## 🌐 Live Deployments
+
+| Component | Platform | Live URL | Status |
+| :--- | :--- | :--- | :--- |
+| **Frontend Production Dashboard** | Vercel | [rag-app-lovat-six.vercel.app](https://rag-app-lovat-six.vercel.app/) | ![Ready](https://img.shields.io/badge/Status-Ready-brightgreen.svg) |
+| **Alternative Preview Domain** | Vercel | [rag-mu8kckpwx-sankalp-singhs-projects-08580eee.vercel.app](https://rag-mu8kckpwx-sankalp-singhs-projects-08580eee.vercel.app/) | ![Ready](https://img.shields.io/badge/Status-Ready-brightgreen.svg) |
+| **Backend API Gateway** | Render.com | [ragapp-backend.onrender.com](https://ragapp-backend.onrender.com) | ![Healthy](https://img.shields.io/badge/Status-Healthy-brightgreen.svg) |
+| **Interactive API Documentation** | Swagger / OpenAPI | [ragapp-backend.onrender.com/docs](https://ragapp-backend.onrender.com/docs) | ![Swagger](https://img.shields.io/badge/Swagger-UI-blue.svg) |
+| **Universal Chat Widget CDN** | Direct Asset | [ragapp-backend.onrender.com/widget.js](https://ragapp-backend.onrender.com/widget.js) | ![Live](https://img.shields.io/badge/Asset-Live-blue.svg) |
+
+---
+
 ## 📌 Executive Summary
 
 Traditional Retrieval-Augmented Generation (RAG) platforms suffer from a fundamental blindspot: **they only know how to retrieve answers from documents you remember to give them—they have no idea what they do NOT know.** When visitors ask unaddressed questions, typical chatbots either hallucinate or reply with generic apologies, leaving organizations completely unaware of critical blind spots in their documentation, product guides, and policies.
