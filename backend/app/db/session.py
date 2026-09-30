@@ -34,7 +34,8 @@ else:
         connect_args={
             "server_settings": {
                 "jit": "off"      # Disables PostgreSQL JIT to optimize fast OLTP queries
-            }
+            },
+            **({"statement_cache_size": 0, "prepared_statement_cache_size": 0} if "pooler.supabase.com" in db_url else {})
         } if "postgresql" in db_url else {}
     )
 
