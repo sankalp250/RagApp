@@ -1,0 +1,37 @@
+services:
+  # ============================================================================
+  # 🚀 FastAPI Backend + RAG Intelligence Engine (Free Tier Web Service)
+  # ============================================================================
+  - type: web
+    name: ragapp-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEFAULT_LLM_PROVIDER
+        value: gemini
+      - key: DEFAULT_EMBEDDING_PROVIDER
+        value: gemini
+      - key: EMBEDDING_DIMENSION
+        value: "768"
+      - key: USE_SQLITE_FALLBACK
+        value: "true"
+      - key: USE_REDIS_FALLBACK
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SYNC_URL
+        sync: false

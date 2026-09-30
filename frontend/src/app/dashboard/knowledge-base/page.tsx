@@ -394,8 +394,9 @@ export default function KnowledgeBasePage() {
 
     try {
       if (currentAgent?.public_key) {
+        const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
         const res = await fetch(
-          `http://127.0.0.1:8000/api/v1/widget/${currentAgent.public_key}/chat`,
+          `${rawApiUrl}/api/v1/widget/${currentAgent.public_key}/chat`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

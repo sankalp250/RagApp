@@ -41,11 +41,12 @@ export function RagChatbot({
     const SCRIPT_ID = `rag-widget-script-${agentId}`;
     if (document.getElementById(SCRIPT_ID)) return;
 
+    const cleanApiUrl = apiUrl.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
     const script = document.createElement("script");
     script.id = SCRIPT_ID;
-    script.src = `${apiUrl.replace(/\/$/, "")}/widget.js`;
+    script.src = `${cleanApiUrl}/widget.js`;
     script.setAttribute("data-agent-id", agentId);
-    script.setAttribute("data-api-url", apiUrl.replace(/\/$/, ""));
+    script.setAttribute("data-api-url", cleanApiUrl);
     script.setAttribute("data-theme", theme);
     script.setAttribute("data-position", position);
     script.async = true;

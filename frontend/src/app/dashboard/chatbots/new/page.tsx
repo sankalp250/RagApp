@@ -533,7 +533,8 @@ function ChatbotStudioContent() {
     setIsSaving(true);
     try {
       const token = localStorage.getItem("access_token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/agents`, {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+      const res = await fetch(`${baseUrl}/api/v1/agents`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -567,7 +568,8 @@ function ChatbotStudioContent() {
   const [embedFramework, setEmbedFramework] = useState<"html" | "react" | "nextjs" | "vue" | "shopify">("html");
   const [customApiUrl, setCustomApiUrl] = useState<string>("");
 
-  const effectiveApiUrl = customApiUrl.trim() || (typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`) : "http://127.0.0.1:8000");
+  const rawFallback = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`) : "http://127.0.0.1:8000";
+  const effectiveApiUrl = (customApiUrl.trim() || rawFallback).replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
 
   const getFrameworkSnippet = (fw: "html" | "react" | "nextjs" | "vue" | "shopify") => {
     switch (fw) {
