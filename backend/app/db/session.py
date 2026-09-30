@@ -84,6 +84,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
         # Lightweight schema migrations for existing databases
+        is_pg = "postgresql" in str(engine.url)
         columns_to_add = [
             ("documents", "knowledge_source_id", "VARCHAR(36)"),
             ("documents", "source_page_id", "VARCHAR(36)"),
@@ -94,7 +95,7 @@ async def init_db() -> None:
             ("documents", "content_hash", "VARCHAR(64)"),
             ("documents", "previous_hash", "VARCHAR(64)"),
             ("documents", "version", "INTEGER DEFAULT 1"),
-            ("documents", "is_active", "BOOLEAN DEFAULT 1"),
+            ("documents", "is_active", "BOOLEAN DEFAULT TRUE" if is_pg else "BOOLEAN DEFAULT 1"),
             ("document_chunks", "content_hash", "VARCHAR(64)"),
             ("knowledge_sources", "current_version", "INTEGER DEFAULT 1"),
             ("crawl_jobs", "pages_unchanged", "INTEGER DEFAULT 0"),
@@ -109,23 +110,30 @@ async def init_db() -> None:
             ("crawled_pages", "previous_hash", "VARCHAR(64)"),
             ("crawled_pages", "change_status", "VARCHAR(50) DEFAULT 'NEW'"),
             ("crawled_pages", "crawl_version", "INTEGER DEFAULT 1"),
-            ("crawled_pages", "is_active", "BOOLEAN DEFAULT 1"),
+            ("crawled_pages", "is_active", "BOOLEAN DEFAULT TRUE" if is_pg else "BOOLEAN DEFAULT 1"),
             ("knowledge_gaps", "topic", "VARCHAR(255)"),
-            ("knowledge_gaps", "sample_questions", "TEXT DEFAULT '[]'"),
+            ("knowledge_gaps", "sample_questions", "JSON DEFAULT '[]'::json" if is_pg else "TEXT DEFAULT '[]'"),
             ("knowledge_gaps", "confidence", "FLOAT DEFAULT 0.5"),
-            ("knowledge_gaps", "embedding", "TEXT"),
-            ("knowledge_gaps", "retrieval_metrics", "TEXT DEFAULT '{}'"),
-            ("knowledge_gaps", "feedback_metrics", "TEXT DEFAULT '{}'"),
-            ("knowledge_gaps", "first_seen_at", "TIMESTAMP"),
-            ("knowledge_gaps", "last_seen_at", "TIMESTAMP"),
+            ("knowledge_gaps", "embedding", "JSON" if is_pg else "TEXT"),
+            ("knowledge_gaps", "retrieval_metrics", "JSON DEFAULT '{}'::json" if is_pg else "TEXT DEFAULT '{}'"),
+            ("knowledge_gaps", "feedback_metrics", "JSON DEFAULT '{}'::json" if is_pg else "TEXT DEFAULT '{}'"),
+            ("knowledge_gaps", "first_seen_at", "TIMESTAMPTZ DEFAULT NOW()" if is_pg else "TIMESTAMP"),
+            ("knowledge_gaps", "last_seen_at", "TIMESTAMPTZ DEFAULT NOW()" if is_pg else "TIMESTAMP"),
         ]
         for tbl, col, col_type in columns_to_add:
             try:
-                if "postgresql" in str(engine.url):
-                    await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS {col} {col_type};"))
-                else:
-                    await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type};"))
+                async with conn.begin_nested():
+                    if is_pg:
+                        await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS {col} {col_type};"))
+                    else:
+                        await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type};"))
             except Exception:
                 pass
+
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text("UPDATE knowledge_gaps SET topic = query WHERE topic IS NULL OR topic = '';"))
+        except Exception:
+            pass
 
         logger.info("Database schema initialized.")

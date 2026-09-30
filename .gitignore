@@ -72,3 +72,5 @@ logs/
 
 # Deployment & Internal Automation Scripts
 scripts/deploy_render.py
+scripts/apply_migrations.py
+scripts/test_api_endpoints.py
