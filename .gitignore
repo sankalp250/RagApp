@@ -69,3 +69,6 @@ scratch/
 # Logs
 logs/
 *.log
+
+# Deployment & Internal Automation Scripts
+scripts/deploy_render.py
