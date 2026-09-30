@@ -63,6 +63,28 @@ export const authStorage = {
   },
 };
 
+// ─── High-Performance Client Cache & In-Flight Request Deduplication ─────────
+interface CacheRecord<T> {
+  data: T;
+  timestamp: number;
+  ttlMs: number;
+}
+
+const clientCache = new Map<string, CacheRecord<any>>();
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function invalidateApiCache(pattern?: string) {
+  if (!pattern) {
+    clientCache.clear();
+    return;
+  }
+  for (const key of clientCache.keys()) {
+    if (key.includes(pattern)) {
+      clientCache.delete(key);
+    }
+  }
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -106,6 +128,7 @@ async function request<T>(
       // Clear invalid/expired credentials
       if (!endpoint.includes("/auth/login") && !endpoint.includes("/auth/register")) {
         authStorage.clear();
+        invalidateApiCache();
         if (unauthorizedHandler) {
           unauthorizedHandler();
         }
@@ -126,36 +149,83 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(endpoint: string, headers?: Record<string, string>) =>
-    request<T>(endpoint, { method: "GET", headers }),
+  get: <T>(
+    endpoint: string,
+    headers?: Record<string, string>,
+    options: { bypassCache?: boolean; ttlMs?: number } = {}
+  ): Promise<T> => {
+    const { bypassCache = false, ttlMs = 25000 } = options;
+    const token = authStorage.getToken() || "anon";
+    const cacheKey = `GET:${endpoint}:${token}`;
 
-  post: <T>(endpoint: string, body?: any, headers?: Record<string, string>) =>
-    request<T>(endpoint, {
+    if (!bypassCache) {
+      const cached = clientCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < cached.ttlMs) {
+        return Promise.resolve(cached.data as T);
+      }
+    }
+
+    // Deduplicate identical concurrent inflight requests
+    if (inFlightRequests.has(cacheKey)) {
+      return inFlightRequests.get(cacheKey) as Promise<T>;
+    }
+
+    const fetchPromise = request<T>(endpoint, { method: "GET", headers })
+      .then((data) => {
+        clientCache.set(cacheKey, {
+          data,
+          timestamp: Date.now(),
+          ttlMs,
+        });
+        return data;
+      })
+      .finally(() => {
+        inFlightRequests.delete(cacheKey);
+      });
+
+    inFlightRequests.set(cacheKey, fetchPromise);
+    return fetchPromise;
+  },
+
+  post: <T>(endpoint: string, body?: any, headers?: Record<string, string>) => {
+    invalidateApiCache();
+    return request<T>(endpoint, {
       method: "POST",
       body: body instanceof FormData ? body : JSON.stringify(body),
       headers,
-    }),
+    });
+  },
 
-  put: <T>(endpoint: string, body?: any, headers?: Record<string, string>) =>
-    request<T>(endpoint, {
+  put: <T>(endpoint: string, body?: any, headers?: Record<string, string>) => {
+    invalidateApiCache();
+    return request<T>(endpoint, {
       method: "PUT",
       body: body instanceof FormData ? body : JSON.stringify(body),
       headers,
-    }),
+    });
+  },
 
-  patch: <T>(endpoint: string, body?: any, headers?: Record<string, string>) =>
-    request<T>(endpoint, {
+  patch: <T>(endpoint: string, body?: any, headers?: Record<string, string>) => {
+    invalidateApiCache();
+    return request<T>(endpoint, {
       method: "PATCH",
       body: body instanceof FormData ? body : JSON.stringify(body),
       headers,
-    }),
+    });
+  },
 
-  delete: <T>(endpoint: string, headers?: Record<string, string>) =>
-    request<T>(endpoint, { method: "DELETE", headers }),
+  delete: <T>(endpoint: string, headers?: Record<string, string>) => {
+    invalidateApiCache();
+    return request<T>(endpoint, { method: "DELETE", headers });
+  },
 
-  upload: <T>(endpoint: string, formData: FormData) =>
-    request<T>(endpoint, {
+  upload: <T>(endpoint: string, formData: FormData) => {
+    invalidateApiCache();
+    return request<T>(endpoint, {
       method: "POST",
       body: formData,
-    }),
+    });
+  },
+
+  invalidateCache: invalidateApiCache,
 };

@@ -14,6 +14,7 @@ Endpoints:
   GET  /analytics/overview                    - Org dashboard (2 parallel DB calls)
 """
 import asyncio
+import time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +33,28 @@ from backend.app.ai.intelligence import (
 
 router = APIRouter()
 
+# ─── High-Throughput L1 In-Memory Analytics Cache ────────────────────────────
+_L1_ANALYTICS_CACHE: dict = {}
+
+def _get_cached_analytics(key: str, ttl_seconds: float = 15.0):
+    entry = _L1_ANALYTICS_CACHE.get(key)
+    if entry and (time.time() - entry["ts"] < ttl_seconds):
+        return entry["data"]
+    return None
+
+def _set_cached_analytics(key: str, data):
+    if len(_L1_ANALYTICS_CACHE) > 500:
+        _L1_ANALYTICS_CACHE.clear()
+    _L1_ANALYTICS_CACHE[key] = {"data": data, "ts": time.time()}
+
+def _invalidate_analytics_cache(prefix: str = ""):
+    if not prefix:
+        _L1_ANALYTICS_CACHE.clear()
+        return
+    for k in list(_L1_ANALYTICS_CACHE.keys()):
+        if k.startswith(prefix):
+            _L1_ANALYTICS_CACHE.pop(k, None)
+
 
 @router.get(
     "/knowledge-gaps",
@@ -48,6 +71,11 @@ async def list_knowledge_gaps(
     Returns knowledge gaps ranked by frequency.
     Use this to understand what customers are asking that the agent can't answer.
     """
+    cache_key = f"gaps:{current_user.organization_id}:{agent_id}:{status}:{limit}"
+    cached = _get_cached_analytics(cache_key, ttl_seconds=15.0)
+    if cached is not None:
+        return cached
+
     stmt = (
         select(KnowledgeGap)
         .where(KnowledgeGap.organization_id == current_user.organization_id)
@@ -62,7 +90,7 @@ async def list_knowledge_gaps(
     result = await db.execute(stmt)
     gaps = result.scalars().all()
 
-    return {
+    payload = {
         "total": len(gaps),
         "gaps": [
             {
@@ -86,6 +114,8 @@ async def list_knowledge_gaps(
             for g in gaps
         ]
     }
+    _set_cached_analytics(cache_key, payload)
+    return payload
 
 
 @router.patch(
@@ -116,6 +146,8 @@ async def update_knowledge_gap(
 
     gap.status = status
     await db.commit()
+    _invalidate_analytics_cache(f"gaps:{current_user.organization_id}")
+    _invalidate_analytics_cache(f"overview:{current_user.organization_id}")
     return {"id": gap_id, "status": status}
 
 
@@ -298,6 +330,10 @@ async def get_overview_metrics(
     Consolidated into a single unified SQL query + 1 recent conversations query (100% async session safe).
     """
     org_id = current_user.organization_id
+    cache_key = f"overview:{org_id}"
+    cached = _get_cached_analytics(cache_key, ttl_seconds=15.0)
+    if cached is not None:
+        return cached
 
     from backend.app.db.models.agent import Agent
     from backend.app.db.models.document import Document, DocumentChunk
@@ -331,7 +367,7 @@ async def get_overview_metrics(
     avg_latency = agg.get("avg_latency")
     gap_count = agg.get("gap_count") or 0
 
-    return {
+    payload = {
         "agents_count": agents_count,
         "documents_count": docs_count,
         "chunks_count": chunks_count,
@@ -353,6 +389,8 @@ async def get_overview_metrics(
             for c in recent_convs
         ]
     }
+    _set_cached_analytics(cache_key, payload)
+    return payload
 
 
 @router.get(

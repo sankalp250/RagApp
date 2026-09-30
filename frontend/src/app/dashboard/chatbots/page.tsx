@@ -96,11 +96,34 @@ export default function ChatbotsPage() {
         <h3 className="font-bold text-base text-slate-900 mb-4 flex items-center gap-2">
           <span>Active Deployed Chatbots</span>
           <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">
-            {agents.length}
+            {loading && agents.length === 0 ? "..." : agents.length}
           </span>
         </h3>
 
-        {agents.length === 0 ? (
+        {loading && agents.length === 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="p-6 rounded-[32px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5 space-y-5 animate-pulse"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100" />
+                  <div className="w-14 h-5 rounded-full bg-slate-100" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-5 w-2/3 bg-slate-100 rounded-md" />
+                  <div className="h-3.5 w-full bg-slate-100 rounded-md" />
+                  <div className="h-3.5 w-4/5 bg-slate-100 rounded-md" />
+                </div>
+                <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
+                  <div className="h-4 w-20 bg-slate-100 rounded" />
+                  <div className="h-8 w-24 bg-slate-100 rounded-xl" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : agents.length === 0 ? (
           <div className="p-8 rounded-[32px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5 text-center space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
               <Bot className="w-6 h-6" />

@@ -80,7 +80,7 @@ export default function DashboardOverviewPage() {
   const docsCount = metrics?.documents_count ?? 0;
   const convCount = metrics?.conversations_count ?? 0;
   const uniqueUsers = metrics?.unique_users_count ?? 0;
-  const isFresh = metrics?.is_fresh_account ?? true;
+  const isFresh = !loading && metrics ? metrics.is_fresh_account : false;
 
   return (
     <div className="space-y-8">
@@ -97,9 +97,13 @@ export default function DashboardOverviewPage() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {isFresh
-              ? "Your new AI Studio workspace is ready. Build your first agent to begin."
-              : `Here is the live performance overview across your ${agentsCount} active AI agents and ${docsCount} knowledge sources.`}
+            {loading && !metrics ? (
+              <span className="inline-block h-4 w-64 bg-slate-100 rounded animate-pulse" />
+            ) : isFresh ? (
+              "Your new AI Studio workspace is ready. Build your first agent to begin."
+            ) : (
+              `Here is the live performance overview across your ${agentsCount} active AI agents and ${docsCount} knowledge sources.`
+            )}
           </p>
         </div>
 
@@ -125,12 +129,16 @@ export default function DashboardOverviewPage() {
                 <Activity className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
-              {convCount.toLocaleString()}
-            </div>
+            {loading && !metrics ? (
+              <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse my-1" />
+            ) : (
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
+                {convCount.toLocaleString()}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 mt-3 text-xs font-semibold text-slate-400">
-            {convCount === 0 ? "Awaiting first user session" : "Live customer sessions"}
+            {convCount === 0 && !loading ? "Awaiting first user session" : "Live customer sessions"}
           </div>
         </div>
 
@@ -143,12 +151,16 @@ export default function DashboardOverviewPage() {
                 <Users className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
-              {uniqueUsers.toLocaleString()}
-            </div>
+            {loading && !metrics ? (
+              <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse my-1" />
+            ) : (
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
+                {uniqueUsers.toLocaleString()}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 mt-3 text-xs font-semibold text-slate-400">
-            {uniqueUsers === 0 ? "No visitors yet" : "Active visitors"}
+            {uniqueUsers === 0 && !loading ? "No visitors yet" : "Active visitors"}
           </div>
         </div>
 
@@ -161,12 +173,16 @@ export default function DashboardOverviewPage() {
                 <CheckCircle2 className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
-              {metrics?.resolution_rate || "--"}
-            </div>
+            {loading && !metrics ? (
+              <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse my-1" />
+            ) : (
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
+                {metrics?.resolution_rate || "--"}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 mt-3 text-xs font-semibold text-slate-400">
-            {convCount === 0 ? "Measured upon first chat" : "Successfully resolved"}
+            {convCount === 0 && !loading ? "Measured upon first chat" : "Successfully resolved"}
           </div>
         </div>
 
@@ -179,12 +195,16 @@ export default function DashboardOverviewPage() {
                 <Clock className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
-              {metrics?.avg_latency || "--"}
-            </div>
+            {loading && !metrics ? (
+              <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse my-1" />
+            ) : (
+              <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
+                {metrics?.avg_latency || "--"}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 mt-3 text-xs font-semibold text-slate-400">
-            {convCount === 0 ? "Fast streaming RAG latency" : "Sub-second response"}
+            {convCount === 0 && !loading ? "Fast streaming RAG latency" : "Sub-second response"}
           </div>
         </div>
       </div>
@@ -292,7 +312,22 @@ export default function DashboardOverviewPage() {
             </div>
           </div>
 
-          {convCount === 0 ? (
+          {loading && !metrics ? (
+            <div className="space-y-4 py-4 animate-pulse">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-slate-100" />
+                    <div className="space-y-1.5">
+                      <div className="h-3.5 w-32 bg-slate-100 rounded" />
+                      <div className="h-2.5 w-20 bg-slate-100 rounded" />
+                    </div>
+                  </div>
+                  <div className="h-5 w-14 rounded-full bg-slate-100" />
+                </div>
+              ))}
+            </div>
+          ) : convCount === 0 ? (
             <div className="py-14 text-center space-y-4">
               <div className="w-14 h-14 rounded-3xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
                 <MessageSquare className="w-7 h-7" />
@@ -363,11 +398,16 @@ export default function DashboardOverviewPage() {
                 <h4 className="font-bold text-sm text-slate-900">Knowledge Gaps</h4>
               </div>
               <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200">
-                {metrics?.knowledge_gaps_count ?? 0} GAPS
+                {loading && !metrics ? "..." : `${metrics?.knowledge_gaps_count ?? 0} GAPS`}
               </span>
             </div>
 
-            {(metrics?.knowledge_gaps_count ?? 0) === 0 ? (
+            {loading && !metrics ? (
+              <div className="space-y-2 py-2 animate-pulse">
+                <div className="h-3 w-3/4 bg-slate-100 rounded" />
+                <div className="h-8 w-full bg-slate-100 rounded-xl mt-2" />
+              </div>
+            ) : (metrics?.knowledge_gaps_count ?? 0) === 0 ? (
               <div className="py-4 text-center space-y-2">
                 <p className="text-xs text-slate-500 leading-relaxed">
                   No gaps detected. The AI gap intelligence engine will continuously flag questions that require new documentation.

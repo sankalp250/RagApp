@@ -760,7 +760,31 @@ export default function KnowledgeBasePage() {
           </button>
         </div>
 
-        {docs.length === 0 ? (
+        {loading && docs.length === 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="p-5 rounded-[28px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5 animate-pulse space-y-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-100 shrink-0" />
+                    <div className="space-y-1.5">
+                      <div className="w-40 h-3.5 bg-slate-200 rounded-md" />
+                      <div className="w-24 h-2.5 bg-slate-100 rounded-md" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100">
+                  <div className="h-8 bg-slate-100 rounded-xl" />
+                  <div className="h-8 bg-slate-100 rounded-xl" />
+                  <div className="h-8 bg-slate-100 rounded-xl" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : docs.length === 0 ? (
           <div className="p-12 rounded-[32px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5 text-center space-y-4">
             <div className="w-14 h-14 rounded-3xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
               <Database className="w-7 h-7" />

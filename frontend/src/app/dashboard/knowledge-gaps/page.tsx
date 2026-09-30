@@ -75,25 +75,31 @@ export default function KnowledgeGapsPage() {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display">
               Knowledge Gap Intelligence
             </h1>
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1 border ${
-                gaps.length > 0
-                  ? "bg-rose-50 text-rose-700 border-rose-200"
-                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
-              }`}
-            >
-              {gaps.length > 0 ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                  <span>{gaps.length} Gaps Detected</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>0 Gaps (Optimal Coverage)</span>
-                </>
-              )}
-            </span>
+            {loading && gaps.length === 0 ? (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 animate-pulse border border-slate-200">
+                Scanning Gaps...
+              </span>
+            ) : (
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1 border ${
+                  gaps.length > 0
+                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                }`}
+              >
+                {gaps.length > 0 ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                    <span>{gaps.length} Gaps Detected</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>0 Gaps (Optimal Coverage)</span>
+                  </>
+                )}
+              </span>
+            )}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
             AI continuously discovers unanswered queries, clusters semantic gaps, and synthesizes ready-to-publish articles.
@@ -112,19 +118,27 @@ export default function KnowledgeGapsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="p-5 rounded-[28px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5">
           <span className="text-xs font-semibold text-slate-500 block mb-1">Total Gap Clusters</span>
-          <span className="text-3xl font-black text-slate-900 font-display">
-            {gaps.length} {gaps.length === 1 ? "Topic" : "Topics"}
-          </span>
+          {loading && gaps.length === 0 ? (
+            <div className="h-9 w-24 bg-slate-100 rounded-xl animate-pulse my-0.5" />
+          ) : (
+            <span className="text-3xl font-black text-slate-900 font-display">
+              {gaps.length} {gaps.length === 1 ? "Topic" : "Topics"}
+            </span>
+          )}
           <p className="text-[11px] text-slate-400 mt-1">
-            {gaps.length === 0 ? "No unresolved customer queries" : "Identified across active conversations"}
+            {gaps.length === 0 && !loading ? "No unresolved customer queries" : "Identified across active conversations"}
           </p>
         </div>
 
         <div className="p-5 rounded-[28px] bg-white border border-slate-200/80 shadow-md shadow-slate-900/5">
           <span className="text-xs font-semibold text-slate-500 block mb-1">Unresolved Questions</span>
-          <span className="text-3xl font-black text-slate-900 font-display">
-            {gaps.reduce((acc, g) => acc + (g.frequency || 1), 0)} Inquiries
-          </span>
+          {loading && gaps.length === 0 ? (
+            <div className="h-9 w-28 bg-slate-100 rounded-xl animate-pulse my-0.5" />
+          ) : (
+            <span className="text-3xl font-black text-slate-900 font-display">
+              {gaps.reduce((acc, g) => acc + (g.frequency || 1), 0)} Inquiries
+            </span>
+          )}
           <p className="text-[11px] text-slate-400 mt-1">Queries resulting in fallback responses</p>
         </div>
 
@@ -136,7 +150,30 @@ export default function KnowledgeGapsPage() {
       </div>
 
       {/* Main Gaps Display */}
-      {gaps.length === 0 ? (
+      {loading && gaps.length === 0 ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div className="lg:col-span-5 space-y-3">
+            <div className="h-4 w-36 bg-slate-100 rounded animate-pulse mb-2" />
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="p-4 rounded-2xl border border-slate-100 bg-white/60 space-y-2 animate-pulse">
+                <div className="flex justify-between">
+                  <div className="h-3 w-16 bg-slate-100 rounded" />
+                  <div className="h-3 w-10 bg-slate-100 rounded" />
+                </div>
+                <div className="h-4 w-3/4 bg-slate-100 rounded" />
+              </div>
+            ))}
+          </div>
+          <div className="lg:col-span-7 p-7 rounded-[36px] bg-white border border-slate-200/80 shadow-md space-y-6">
+            <div className="space-y-3 animate-pulse">
+              <div className="h-3 w-20 bg-slate-100 rounded" />
+              <div className="h-6 w-2/3 bg-slate-100 rounded" />
+              <div className="h-4 w-5/6 bg-slate-100 rounded" />
+              <div className="h-10 w-full bg-slate-100 rounded-2xl mt-4" />
+            </div>
+          </div>
+        </div>
+      ) : gaps.length === 0 ? (
         <div className="p-12 rounded-[36px] bg-white border border-slate-200/80 shadow-xl shadow-slate-900/5 text-center space-y-4">
           <div className="w-14 h-14 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
             <CheckCircle2 className="w-7 h-7" />

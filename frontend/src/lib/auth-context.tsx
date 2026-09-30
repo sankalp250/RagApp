@@ -54,8 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (savedToken && savedUser) {
       setToken(savedToken);
       setUser(savedUser);
+      setLoading(false); // Instant hydration: unblock dashboard rendering immediately
       
-      // Background validation against /auth/me to verify token validity
+      // Non-blocking background token verification
       api.get<{
         id: string;
         email: string;
@@ -71,10 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(updated);
         })
         .catch(() => {
-          // Token expired or invalid — 401 interceptor in api.ts will have cleared storage
-        })
-        .finally(() => {
-          setLoading(false);
+          // Token expired or invalid — 401 interceptor in api.ts will handle cleanup
         });
     } else {
       setLoading(false);
