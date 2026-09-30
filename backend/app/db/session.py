@@ -28,8 +28,8 @@ else:
         future=True,
         pool_pre_ping=True,       # Verifies connection liveness before checkout; auto-reconnects if dead
         pool_recycle=1800,        # Recycles connections every 30 minutes to prevent stale/closed connections
-        pool_size=20,             # Base connection pool size
-        max_overflow=10,          # Extra burst connections
+        pool_size=5,              # Conservative connection pool for free tier DB
+        max_overflow=5,           # Extra burst connections
         pool_timeout=30,          # Connection checkout timeout
         connect_args={
             "server_settings": {
