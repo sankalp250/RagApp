@@ -87,16 +87,19 @@ Customer Website (Widget) ──► FastAPI Gateway ──► Hybrid RAG (SIMD p
 
 ### 6. 📊 Modern Executive Intelligence Dashboard
 * **Cutting-Edge Tech Stack**: Built with **Next.js 16 (App Router)**, **React 19**, **Tailwind CSS 4**, and **Framer Motion**.
+* **Instant Client Navigation**: Client-side SWR caching (25s TTL) with concurrent in-flight request deduplication for 0ms tab transitions across Overview, Chatbots, Knowledge Base, and Knowledge Gaps.
+* **Zero-Flicker Skeleton UX**: Eliminated false empty state layout jumps with context-aware shimmering skeleton loaders.
 * **Mission Control Center**: Real-time KPI cards for Resolution Rate, Average Response Latency, Active Chatbots, Knowledge Health Score, and Total Processed Chunks.
 * **Conversation Explorer**: Comprehensive audit log with turn-by-turn retrieval inspection, retrieved chunk evidence, user sentiment, and feedback scores.
 * **Knowledge Studio**: Upload documents (PDF, DOCX, TXT, CSV, MD), trigger URL crawls, and inspect chunked vectors.
 * **Live Agent Customizer**: Interactive preview pane to customize colors, greetings, and system instructions in real time.
 
 ### 7. 🛡️ Enterprise Hardening & Production Observability
+* **High-Throughput L1 In-Memory Analytics Cache**: Shields PostgreSQL/Supabase connection limits from query stampedes on heavy analytics subqueries.
 * **Redis Token-Bucket Rate Limiter**: Distributed sliding window rate limiting per IP and per tenant with automatic in-memory fallback.
 * **Circuit Breaker Pattern**: Wraps external LLM and embedding APIs to avert cascading thread pool exhaustion during third-party outages.
 * **Structured Observability**: Structured JSON logging, unique request correlation IDs (`X-Request-ID`), and microsecond execution latency metrics via ASGI middleware.
-* **Dual-Tier Caching**: Redis semantic cache for frequent query responses + L1 agent configuration cache for cold-start mitigation.
+* **Multi-Tier Caching**: Redis semantic cache for frequent query responses + L1 agent & analytics memory cache for sub-millisecond responses.
 
 ---
 
