@@ -121,8 +121,11 @@ async def init_db() -> None:
         ]
         for tbl, col, col_type in columns_to_add:
             try:
-                await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type};"))
+                if "postgresql" in str(engine.url):
+                    await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS {col} {col_type};"))
+                else:
+                    await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type};"))
             except Exception:
-                pass  # Column already exists
+                pass
 
         logger.info("Database schema initialized.")
